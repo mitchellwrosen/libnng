@@ -2,149 +2,165 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE ForeignFunctionInterface   #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 
 module Libnng
-  ( NngDialer(..)
-  , NngListener(..)
-  , NngSocket(..)
+  ( NngDialer
+  , NngListener
+  , NngSocket
   , nng_close
   , nng_dial
+  , nng_dial_
   , nng_dialer_close
   , nng_listen
+  , nng_listen_
   , nng_rep0_open
   , nng_req0_open
+  , nng_send
+  , nng_send_unsafe
+  , nng_socket_id
   , nng_strerror
   , nng_version
   ) where
 
-import Data.ByteString (ByteString)
-import Data.Text (Text)
+import Data.Coerce (coerce)
 import Data.Word (Word32)
 import Foreign.C.String
+import Foreign.C.Types
 import Foreign.Marshal.Alloc
 import Foreign.Ptr
 import Foreign.Storable
-import System.IO.Unsafe (unsafePerformIO)
-import qualified Data.ByteString as ByteString
-import qualified Data.Text.Encoding as Text
 
 
 newtype NngDialer
-  = NngDialer { unNngDialer :: Word32 }
+  = NngDialer Word32
   deriving stock ( Eq, Show )
   deriving newtype ( Storable )
 
 newtype NngListener
-  = NngListener { unNngListener :: Word32 }
+  = NngListener Word32
   deriving stock ( Eq, Show )
   deriving newtype ( Storable )
 
 newtype NngSocket
-  = NngSocket { unNngSocket :: Word32 }
+  = NngSocket Word32
   deriving stock ( Eq, Show )
   deriving newtype ( Storable )
 
 
 nng_close
   :: NngSocket
-  -> IO Int
-nng_close =
-  c_nng_close
+  -> IO ( Either CInt () )
+nng_close socket =
+  c_nng_close socket >>= \case
+    0 -> pure ( Right () )
+    n -> pure ( Left n )
 
 nng_dial
   :: NngSocket
-  -> Text
-  -> Int
-  -> IO ( Either Int NngDialer )
+  -> CString
+  -> CInt
+  -> IO ( Either CInt NngDialer )
 nng_dial socket url flags =
-  ByteString.useAsCString
-    ( Text.encodeUtf8 url )
-    \url2 ->
-      allocaBytes 4 \dialerPtr -> do
-        result :: Int <-
-          c_nng_dial
-            socket
-            url2
-            dialerPtr
-            flags
+  allocaBytes 4 \dialerPtr -> do
+    c_nng_dial socket url dialerPtr flags >>= \case
+      0 -> Right <$> peek dialerPtr
+      n -> pure ( Left n )
 
-        if result == 0
-          then
-            Right <$> peek dialerPtr
-
-          else
-            pure ( Left result )
+nng_dial_
+  :: NngSocket
+  -> CString
+  -> CInt
+  -> IO ( Either CInt () )
+nng_dial_ socket url flags =
+  c_nng_dial socket url nullPtr flags >>= \case
+    0 -> pure ( Right () )
+    n -> pure ( Left n )
 
 nng_dialer_close
   :: NngDialer
-  -> IO Int
-nng_dialer_close =
-  c_nng_dialer_close
+  -> IO ( Either CInt () )
+nng_dialer_close dialer =
+  c_nng_dialer_close dialer >>= \case
+    0 ->
+      pure ( Right () )
+
+    n ->
+      pure ( Left n )
 
 nng_listen
   :: NngSocket
-  -> Text
-  -> Int
-  -> IO ( Either Int NngListener )
+  -> CString
+  -> CInt
+  -> IO ( Either CInt NngListener )
 nng_listen socket url flags =
-  ByteString.useAsCString
-    ( Text.encodeUtf8 url )
-    \url2 ->
-      allocaBytes 4 \listenerPtr -> do
-        result :: Int <-
-          c_nng_listen
-            socket
-            url2
-            listenerPtr
-            flags
+  allocaBytes 4 \listenerPtr ->
+    c_nng_listen socket url listenerPtr flags >>= \case
+      0 -> Right <$> peek listenerPtr
+      n -> pure ( Left n )
 
-        if result == 0
-          then
-            Right <$> peek listenerPtr
+nng_listen_
+  :: NngSocket
+  -> CString
+  -> CInt
+  -> IO ( Either CInt () )
+nng_listen_ socket url flags =
+  c_nng_listen socket url nullPtr flags >>= \case
+    0 -> pure ( Right () )
+    n -> pure ( Left n )
 
-          else
-            pure ( Left result )
-
-nng_rep0_open
-  :: IO ( Either Int NngSocket )
+nng_rep0_open :: IO ( Either CInt NngSocket )
 nng_rep0_open =
-  allocaBytes 4 \socketPtr -> do
-    result :: Int <-
-      c_nng_rep0_open socketPtr
+  allocaBytes 4 \socketPtr ->
+    c_nng_rep0_open socketPtr >>= \case
+      0 -> Right <$> peek socketPtr
+      n -> pure ( Left n )
 
-    if result == 0
-      then
-        Right <$> peek socketPtr
-
-      else
-        pure ( Left result )
-
-nng_req0_open
-  :: IO ( Either Int NngSocket )
+nng_req0_open :: IO ( Either CInt NngSocket )
 nng_req0_open =
-  allocaBytes 4 \socketPtr -> do
-    result :: Int <-
-      c_nng_req0_open socketPtr
+  allocaBytes 4 \socketPtr ->
+    c_nng_req0_open socketPtr >>= \case
+      0 -> Right <$> peek socketPtr
+      n -> pure ( Left n )
 
-    if result == 0
-      then
-        Right <$> peek socketPtr
+nng_send
+  :: NngSocket
+  -> Ptr a
+  -> CSize
+  -> CInt
+  -> IO ( Either CInt () )
+nng_send socket data_ size flags =
+  c_nng_send socket data_ size flags >>= \case
+    0 -> pure ( Right () )
+    n -> pure ( Left n )
 
-      else
-        pure ( Left result )
+nng_send_unsafe
+  :: NngSocket
+  -> Ptr a
+  -> CSize
+  -> CInt
+  -> IO ( Either CInt () )
+nng_send_unsafe socket data_ size flags =
+  c_nng_send_unsafe socket data_ size flags >>= \case
+    0 -> pure ( Right () )
+    n -> pure ( Left n )
+
+nng_socket_id
+  :: NngSocket
+  -> Word32
+nng_socket_id =
+  coerce
 
 nng_strerror
-  :: Int
-  -> Text
+  :: CInt
+  -> CString
 nng_strerror =
-  Text.decodeUtf8 . unsafePerformIO . ByteString.packCString . c_nng_strerror
-{-# NOINLINE nng_strerror #-}
+  c_nng_strerror
 
-nng_version :: ByteString
+nng_version :: CString
 nng_version =
-  unsafePerformIO ( ByteString.packCString c_nng_version )
-{-# NOINLINE nng_version #-}
+  c_nng_version
 
 
 --------------------------------------------------------------------------------
@@ -154,36 +170,64 @@ nng_version =
 
 foreign import ccall "nng_close" c_nng_close
   :: NngSocket
-  -> IO Int
+  -> IO CInt
 
 foreign import ccall "nng_dial" c_nng_dial
   :: NngSocket
   -> CString
   -> Ptr NngDialer
-  -> Int
-  -> IO Int
+  -> CInt
+  -> IO CInt
 
 foreign import ccall "nng_dialer_close" c_nng_dialer_close
   :: NngDialer
-  -> IO Int
+  -> IO CInt
 
 foreign import ccall "nng_listen" c_nng_listen
   :: NngSocket
   -> CString
   -> Ptr NngListener
-  -> Int
-  -> IO Int
+  -> CInt
+  -> IO CInt
+
+foreign import ccall safe "nng_recv" c_nng_recv
+  :: NngSocket
+  -> Ptr a
+  -> Ptr CInt
+  -> CInt
+  -> IO CInt
+
+foreign import ccall unsafe "nng_recv" c_nng_recv_unsafe
+  :: NngSocket
+  -> Ptr a
+  -> Ptr CInt
+  -> CInt
+  -> IO CInt
 
 foreign import ccall "nng_rep0_open" c_nng_rep0_open
   :: Ptr NngSocket
-  -> IO Int
+  -> IO CInt
 
 foreign import ccall "nng_req0_open" c_nng_req0_open
   :: Ptr NngSocket
-  -> IO Int
+  -> IO CInt
+
+foreign import ccall safe "nng_send" c_nng_send
+  :: NngSocket
+  -> Ptr a
+  -> CSize
+  -> CInt
+  -> IO CInt
+
+foreign import ccall unsafe "nng_send" c_nng_send_unsafe
+  :: NngSocket
+  -> Ptr a
+  -> CSize
+  -> CInt
+  -> IO CInt
 
 foreign import ccall "nng_strerror" c_nng_strerror
-  :: Int
+  :: CInt
   -> CString
 
 foreign import ccall "nng_version" c_nng_version

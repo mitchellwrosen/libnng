@@ -32,17 +32,14 @@ main = do
         ( readFile ".testcache" <|> pure "" )
     writeIORef passed names
 
-  test "nng_close returns 7 on bogus socket" do
-    nng_close ( NngSocket 0 ) `shouldReturn` 7
-
-  test "nng_close returns 0 on open socket" do
+  test "nng_close returns Right on open socket" do
     socket <- shouldReturnRight nng_req0_open
-    nng_close socket `shouldReturn` 0
+    nng_close socket `shouldReturn` Right ()
 
-  test "nng_close returns 7 on closed socket" do
+  test "nng_close returns Left 7 on closed socket" do
     socket <- shouldReturnRight nng_req0_open
-    nng_close socket `shouldReturn` 0
-    nng_close socket `shouldReturn` 7
+    nng_close socket `shouldReturn` Right ()
+    nng_close socket `shouldReturn` Left 7
 
   test "nng_dial returns Left 3 on bogus url" do
     with_nng_req0 \socket ->
@@ -52,49 +49,38 @@ main = do
     with_nng_req0 \socket ->
       nng_dial socket "inproc://foo" 0 `shouldReturn` Left 6
 
-  test "nng_dial returns Left 7 on bogus socket" do
-    nng_dial ( NngSocket 0 ) "inproc://foo" 0 `shouldReturn` Left 7
-
   -- TODO nng_dial protocol error
 
   test "nng_dial returns Right" do
     with_nng_req0 \req ->
       with_nng_rep0 \rep -> do
-        _ <- shouldReturnRight ( nng_listen rep "inproc://foo" 0 )
-        _ <- shouldReturnRight ( nng_dial req "inproc://foo" 0 )
-        pure ()
+        shouldReturnRight ( nng_listen_ rep "inproc://foo" 0 )
+        shouldReturnRight ( nng_dial_ req "inproc://foo" 0 )
 
-  test "nng_dialer_close returns 12 on bogus dialer" do
-    nng_dialer_close ( NngDialer 0 ) `shouldReturn` 12
-
-  test "nng_dialer_close returns 0 on open dialer" do
+  test "nng_dialer_close returns Right on open dialer" do
     with_nng_req0 \req ->
       with_nng_rep0 \rep -> do
-        _ <- shouldReturnRight ( nng_listen rep "inproc://foo" 0 )
+        shouldReturnRight ( nng_listen_ rep "inproc://foo" 0 )
         dialer <- shouldReturnRight ( nng_dial req "inproc://foo" 0 )
-        nng_dialer_close dialer `shouldReturn` 0
+        nng_dialer_close dialer `shouldReturn` Right ()
 
   test "nng_listen returns Left 3 on bogus url" do
     with_nng_rep0 \socket ->
       nng_listen socket "foo" 0 `shouldReturn` Left 3
 
-  test "nng_listen returns Left 7 on bogus socket" do
-    nng_listen ( NngSocket 0 ) "inproc://foo" 0 `shouldReturn` Left 7
-
   test "nng_listen returns Right" do
     with_nng_rep0 \socket -> do
-      _ <- shouldReturnRight ( nng_listen socket "inproc://foo" 0 )
-      pure ()
+      shouldReturnRight ( nng_listen_ socket "inproc://foo" 0 )
 
   -- TODO nng_listen protocol error
 
   test "nng_rep0_open returns Right" do
     socket <- shouldReturnRight nng_rep0_open
-    nng_close socket `shouldReturn` 0
+    nng_close socket `shouldReturn` Right ()
 
   test "nng_req0_open returns Right" do
     socket <- shouldReturnRight nng_req0_open
-    nng_close socket `shouldReturn` 0
+    nng_close socket `shouldReturn` Right ()
 
   traverse_
     ( \(n, s) ->
