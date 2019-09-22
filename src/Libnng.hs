@@ -13,7 +13,7 @@ module Libnng
   , Socket(..)
     -- * Common functions
   -- , alloc
-  -- , free
+  , free
   -- , strdup
   , strerror
   -- , strfree
@@ -108,11 +108,8 @@ module Libnng
   ) where
 
 import Data.Word (Word32)
-import Foreign.C.String
-import Foreign.C.Types
-import Foreign.Marshal.Alloc
-import Foreign.Ptr
-import Foreign.Storable
+import Foreign hiding (free)
+import Foreign.C
 
 
 newtype Aio
@@ -170,6 +167,13 @@ dialer_close dialer =
   nng_dialer_close dialer >>= \case
     0 -> pure ( Right () )
     n -> pure ( Left n )
+
+free
+  :: Ptr a
+  -> CSize
+  -> IO ()
+free =
+  nng_free
 
 listen
   :: Socket
@@ -283,6 +287,12 @@ foreign import ccall "nng_dialer_close"
   nng_dialer_close
     :: Dialer
     -> IO CInt
+
+foreign import ccall unsafe "nng_free"
+  nng_free
+    :: Ptr a
+    -> CSize
+    -> IO ()
 
 foreign import ccall "nng_listen"
   nng_listen

@@ -1,9 +1,11 @@
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE KindSignatures    #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE BlockArguments      #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Nng
   ( Socket
@@ -16,14 +18,15 @@ module Nng
   , dial
   , listen
   , sendByteString
+  , recvByteString
   ) where
 
 import Data.ByteString (ByteString)
 import Data.Functor ((<&>))
 import Data.Kind (Type)
 import Data.Text (Text)
-import Foreign.C (CString)
-import Foreign.C.Types (CInt)
+import Foreign
+import Foreign.C
 import qualified Data.ByteString as ByteString
 import qualified Data.ByteString.Unsafe as ByteString
 import qualified Data.Text.Encoding as Text
@@ -63,6 +66,10 @@ data SSocketType :: SocketType -> Type where
 type family CanSend (ty :: SocketType) :: Bool where
   CanSend 'SocketType'Rep = 'True
   CanSend 'SocketType'Req = 'True
+
+type family CanReceive (ty :: SocketType) :: Bool where
+  CanReceive 'SocketType'Rep = 'True
+  CanReceive 'SocketType'Req = 'True
 
 data Error
   = Error'Interrupted
@@ -241,3 +248,49 @@ sendByteString socket bytes =
               ( fromIntegral len )
               0
         )
+
+-- | TODO recvByteString async exception safety
+recvByteString
+  :: ( CanReceive ty ~ 'True )
+  => Socket ty
+  -> IO ( Either Error ByteString )
+recvByteString socket =
+  doRecv <&> \case
+    Left err ->
+      Left ( cintToError err )
+
+    Right message ->
+      Right message
+
+  where
+    doRecv :: IO ( Either CInt ByteString )
+    doRecv =
+      alloca \ptrPtr ->
+        alloca \lenPtr ->
+          doRecv2 ptrPtr lenPtr >>= \case
+            Left err ->
+              pure ( Left err )
+
+            Right () -> do
+              ptr :: Ptr Word8 <-
+                peek ptrPtr
+
+              len :: CSize <-
+                peek lenPtr
+
+              Right <$>
+                ByteString.unsafePackCStringFinalizer
+                  ptr
+                  ( fromIntegral len )
+                  ( Libnng.free ptr len )
+
+    doRecv2
+      :: Ptr ( Ptr Word8 )
+      -> Ptr CSize
+      -> IO ( Either CInt () )
+    doRecv2 ptrPtr lenPtr =
+      Libnng.recv
+        ( unSocket socket )
+        ptrPtr
+        lenPtr
+        1 -- NNG_FLAG_ALLOC
