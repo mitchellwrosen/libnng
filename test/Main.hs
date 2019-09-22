@@ -33,6 +33,20 @@ main = do
         ( readFile ".testcache" <|> pure "" )
     writeIORef passed names
 
+  test_close
+  test_dial
+  test_dialer_close
+  test_listen
+  test_rep0_open
+  test_req0_open
+  test_strerror
+
+  do
+    names <- readIORef passed
+    writeFile ".testcache" ( unlines ( Set.toList names ) )
+
+test_close :: IO ()
+test_close = do
   test "close returns Right on open socket" do
     socket <- shouldReturnRight req0_open
     close socket `shouldReturn` Right ()
@@ -42,6 +56,8 @@ main = do
     close socket `shouldReturn` Right ()
     close socket `shouldReturn` Left 7
 
+test_dial :: IO ()
+test_dial = do
   test "dial returns Left 3 on bogus address" do
     with_req0 \socket ->
       withCString "foo" \address ->
@@ -61,6 +77,8 @@ main = do
           shouldReturnRight ( listen_ rep address 0 )
           shouldReturnRight ( dial_ req address 0 )
 
+test_dialer_close :: IO ()
+test_dialer_close =  do
   test "dialer_close returns Right on open dialer" do
     with_req0 \req ->
       with_rep0 \rep ->
@@ -69,6 +87,8 @@ main = do
           dialer <- shouldReturnRight ( dial req address 0 )
           dialer_close dialer `shouldReturn` Right ()
 
+test_listen :: IO ()
+test_listen = do
   test "listen returns Left 3 on bogus address" do
     with_rep0 \socket ->
       withCString "foo" \address ->
@@ -81,14 +101,20 @@ main = do
 
   -- TODO listen protocol error
 
+test_rep0_open :: IO ()
+test_rep0_open = do
   test "rep0_open returns Right" do
     socket <- shouldReturnRight rep0_open
     close socket `shouldReturn` Right ()
 
+test_req0_open :: IO ()
+test_req0_open = do
   test "req0_open returns Right" do
     socket <- shouldReturnRight req0_open
     close socket `shouldReturn` Right ()
 
+test_strerror :: IO ()
+test_strerror = do
   traverse_
     ( \(n, s) ->
         test ( "strerror " ++ show n ) do
@@ -113,10 +139,6 @@ main = do
 
   test "version is 1.1.1" do
     peekCString version `shouldReturn` "1.1.1"
-
-  do
-    names <- readIORef passed
-    writeFile ".testcache" ( unlines ( Set.toList names ) )
 
 with_rep0
   :: ( Socket -> IO a )
