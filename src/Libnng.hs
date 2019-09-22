@@ -7,93 +7,93 @@
 {-# LANGUAGE CPP                        #-}
 
 module Libnng
-  ( NngAio
-  , NngDialer
-  , NngListener
-  , NngSocket(..)
+  ( Aio
+  , Dialer
+  , Listener
+  , Socket(..)
     -- * Common functions
-  -- , nng_alloc
-  -- , nng_free
-  -- , nng_strdup
-  , nng_strerror
-  -- , nng_strfree
-  , nng_version
+  -- , alloc
+  -- , free
+  -- , strdup
+  , strerror
+  -- , strfree
+  , version
     -- * Socket functions
-  , nng_close
-  -- , nng_getopt
-  , nng_recv
-  , nng_recv_unsafe
-  , nng_send
-  , nng_send_unsafe
-  -- , nng_setopt
+  , close
+  -- , getopt
+  , recv
+  , recv_unsafe
+  , send
+  , send_unsafe
+  -- , setopt
     -- * Connection management
-  , nng_dial
-  , nng_dial_
-  , nng_dialer_close
-  -- , nng_dialer_create
-  -- , nng_dialer_getopt
-  -- , nng_dialer_id
-  -- , nng_dialer_setopt
-  -- , nng_dialer_start
-  , nng_listen
-  , nng_listen_
-  -- , nng_listener_close
-  -- , nng_listener_create
-  -- , nng_listener_getopt
-  -- , nng_listener_id
-  -- , nng_listener_setopt
-  -- , nng_listener_start
-  -- , nng_pipe_close
-  -- , nng_pipe_dialer
-  -- , nng_pipe_getopt
-  -- , nng_pipe_id
-  -- , nng_pipe_listener
-  -- , nng_pipe_notify
-  -- , nng_pipe_socket
+  , dial
+  , dial_
+  , dialer_close
+  -- , dialer_create
+  -- , dialer_getopt
+  -- , dialer_id
+  -- , dialer_setopt
+  -- , dialer_start
+  , listen
+  , listen_
+  -- , listener_close
+  -- , listener_create
+  -- , listener_getopt
+  -- , listener_id
+  -- , listener_setopt
+  -- , listener_start
+  -- , pipe_close
+  -- , pipe_dialer
+  -- , pipe_getopt
+  -- , pipe_id
+  -- , pipe_listener
+  -- , pipe_notify
+  -- , pipe_socket
     -- * Message handling functions
-  -- , nng_msg_alloc
-  -- , nng_msg_append
-  -- , nng_msg_body
-  -- , nng_msg_chop
-  -- , nng_msg_clear
-  -- , nng_msg_dup
-  -- , nng_msg_free
-  -- , nng_msg_get_pipe
-  -- , nng_msg_insert
-  -- , nng_msg_len
-  -- , nng_msg_realloc
-  -- , nng_msg_set_pipe
-  -- , nng_msg_trim
-  -- , nng_recvmsg
-  -- , nng_sendmsg
+  -- , msg_alloc
+  -- , msg_append
+  -- , msg_body
+  -- , msg_chop
+  -- , msg_clear
+  -- , msg_dup
+  -- , msg_free
+  -- , msg_get_pipe
+  -- , msg_insert
+  -- , msg_len
+  -- , msg_realloc
+  -- , msg_set_pipe
+  -- , msg_trim
+  -- , recvmsg
+  -- , sendmsg
     -- * Message header handling
-  -- , nng_msg_header
-  -- , nng_msg_header_append
-  -- , nng_msg_header_chop
-  -- , nng_msg_header_clear
-  -- , nng_msg_header_insert
-  -- , nng_msg_header_len
-  -- , nng_msg_header_trim
+  -- , msg_header
+  -- , msg_header_append
+  -- , msg_header_chop
+  -- , msg_header_clear
+  -- , msg_header_insert
+  -- , msg_header_len
+  -- , msg_header_trim
     -- * Asynchronous operations
     -- * Protocols
-  -- , nng_bus_open
-  -- , nng_pair_open
-  -- , nng_pub_open
-  -- , nng_pull_open
-  -- , nng_push_open
-  , nng_rep0_open
-  , nng_req0_open
-  -- , nng_respondent_open
-  -- , nng_sub_open
-  -- , nng_surveyor_open
+  -- , bus_open
+  -- , pair_open
+  -- , pub_open
+  -- , pull_open
+  -- , push_open
+  , rep0_open
+  , req0_open
+  -- , respondent_open
+  -- , sub_open
+  -- , surveyor_open
     -- * Transports
-  -- , nng_inproc_register
-  -- , nng_ipc_register
-  -- , nng_tcp_register
-  -- , nng_tls_register
-  -- , nng_ws_register
-  -- , nng_wss_register
-  -- , nng_zt_register
+  -- , inproregister
+  -- , ipregister
+  -- , tcp_register
+  -- , tls_register
+  -- , ws_register
+  -- , wss_register
+  -- , zt_register
     -- * Protocol contexts
     -- * Statistics
     -- * URL object
@@ -107,7 +107,6 @@ module Libnng
     -- * TLS configuration objects
   ) where
 
-import Data.Coerce (coerce)
 import Data.Word (Word32)
 import Foreign.C.String
 import Foreign.C.Types
@@ -116,150 +115,150 @@ import Foreign.Ptr
 import Foreign.Storable
 
 
-newtype NngAio
-  = NngAio ( Ptr () )
+newtype Aio
+  = Aio ( Ptr () )
 
-newtype NngDialer
-  = NngDialer Word32
+newtype Dialer
+  = Dialer Word32
   deriving stock ( Eq, Show )
   deriving newtype ( Storable )
 
-newtype NngListener
-  = NngListener Word32
+newtype Listener
+  = Listener Word32
   deriving stock ( Eq, Show )
   deriving newtype ( Storable )
 
-newtype NngSocket
-  = NngSocket { nng_socket_id :: Word32 }
+newtype Socket
+  = Socket { socket_id :: Word32 }
   deriving stock ( Eq, Show )
   deriving newtype ( Storable )
 
 
-nng_close
-  :: NngSocket
+close
+  :: Socket
   -> IO ( Either CInt () )
-nng_close socket =
-  c_nng_close socket >>= \case
+close socket =
+  nng_close socket >>= \case
     0 -> pure ( Right () )
     n -> pure ( Left n )
 
-nng_dial
-  :: NngSocket
+dial
+  :: Socket
   -> CString
   -> CInt
-  -> IO ( Either CInt NngDialer )
-nng_dial socket url flags =
+  -> IO ( Either CInt Dialer )
+dial socket url flags =
   allocaBytes 4 \dialerPtr -> do
-    c_nng_dial socket url dialerPtr flags >>= \case
+    nng_dial socket url dialerPtr flags >>= \case
       0 -> Right <$> peek dialerPtr
       n -> pure ( Left n )
 
-nng_dial_
-  :: NngSocket
+dial_
+  :: Socket
   -> CString
   -> CInt
   -> IO ( Either CInt () )
-nng_dial_ socket url flags =
-  c_nng_dial socket url nullPtr flags >>= \case
+dial_ socket url flags =
+  nng_dial socket url nullPtr flags >>= \case
     0 -> pure ( Right () )
     n -> pure ( Left n )
 
-nng_dialer_close
-  :: NngDialer
+dialer_close
+  :: Dialer
   -> IO ( Either CInt () )
-nng_dialer_close dialer =
-  c_nng_dialer_close dialer >>= \case
+dialer_close dialer =
+  nng_dialer_close dialer >>= \case
     0 -> pure ( Right () )
     n -> pure ( Left n )
 
-nng_listen
-  :: NngSocket
+listen
+  :: Socket
   -> CString
   -> CInt
-  -> IO ( Either CInt NngListener )
-nng_listen socket url flags =
+  -> IO ( Either CInt Listener )
+listen socket url flags =
   allocaBytes 4 \listenerPtr ->
-    c_nng_listen socket url listenerPtr flags >>= \case
+    nng_listen socket url listenerPtr flags >>= \case
       0 -> Right <$> peek listenerPtr
       n -> pure ( Left n )
 
-nng_listen_
-  :: NngSocket
+listen_
+  :: Socket
   -> CString
   -> CInt
   -> IO ( Either CInt () )
-nng_listen_ socket url flags =
-  c_nng_listen socket url nullPtr flags >>= \case
+listen_ socket url flags =
+  nng_listen socket url nullPtr flags >>= \case
     0 -> pure ( Right () )
     n -> pure ( Left n )
 
-nng_recv
-  :: NngSocket
+recv
+  :: Socket
   -> Ptr a
   -> Ptr CSize
   -> CInt
   -> IO ( Either CInt () )
-nng_recv socket data_ size flags =
-  c_nng_recv socket data_ size flags >>= \case
+recv socket data_ size flags =
+  nng_recv socket data_ size flags >>= \case
     0 -> pure ( Right () )
     n -> pure ( Left n )
 
-nng_recv_unsafe
-  :: NngSocket
+recv_unsafe
+  :: Socket
   -> Ptr a
   -> Ptr CSize
   -> CInt
   -> IO ( Either CInt () )
-nng_recv_unsafe socket data_ size flags =
-  c_nng_recv_unsafe socket data_ size flags >>= \case
+recv_unsafe socket data_ size flags =
+  nng_recv_unsafe socket data_ size flags >>= \case
     0 -> pure ( Right () )
     n -> pure ( Left n )
 
-nng_rep0_open :: IO ( Either CInt NngSocket )
-nng_rep0_open =
+rep0_open :: IO ( Either CInt Socket )
+rep0_open =
   allocaBytes 4 \socketPtr ->
-    c_nng_rep0_open socketPtr >>= \case
+    nng_rep0_open socketPtr >>= \case
       0 -> Right <$> peek socketPtr
       n -> pure ( Left n )
 
-nng_req0_open :: IO ( Either CInt NngSocket )
-nng_req0_open =
+req0_open :: IO ( Either CInt Socket )
+req0_open =
   allocaBytes 4 \socketPtr ->
-    c_nng_req0_open socketPtr >>= \case
+    nng_req0_open socketPtr >>= \case
       0 -> Right <$> peek socketPtr
       n -> pure ( Left n )
 
-nng_send
-  :: NngSocket
+send
+  :: Socket
   -> Ptr a
   -> CSize
   -> CInt
   -> IO ( Either CInt () )
-nng_send socket data_ size flags =
-  c_nng_send socket data_ size flags >>= \case
+send socket data_ size flags =
+  nng_send socket data_ size flags >>= \case
     0 -> pure ( Right () )
     n -> pure ( Left n )
 
-nng_send_unsafe
-  :: NngSocket
+send_unsafe
+  :: Socket
   -> Ptr a
   -> CSize
   -> CInt
   -> IO ( Either CInt () )
-nng_send_unsafe socket data_ size flags =
-  c_nng_send_unsafe socket data_ size flags >>= \case
+send_unsafe socket data_ size flags =
+  nng_send_unsafe socket data_ size flags >>= \case
     0 -> pure ( Right () )
     n -> pure ( Left n )
 
-nng_strerror
+strerror
   :: CInt
   -> CString
-nng_strerror =
-  c_nng_strerror
+strerror =
+  nng_strerror
 
-nng_version :: CString
-nng_version =
-  c_nng_version
+version :: CString
+version =
+  nng_version
 
 
 --------------------------------------------------------------------------------
@@ -268,78 +267,78 @@ nng_version =
 --------------------------------------------------------------------------------
 
 foreign import ccall "nng_close"
-  c_nng_close
-    :: NngSocket
+  nng_close
+    :: Socket
     -> IO CInt
 
 foreign import ccall "nng_dial"
-  c_nng_dial
-    :: NngSocket
+  nng_dial
+    :: Socket
     -> CString
-    -> Ptr NngDialer
+    -> Ptr Dialer
     -> CInt
     -> IO CInt
 
 foreign import ccall "nng_dialer_close"
-  c_nng_dialer_close
-    :: NngDialer
+  nng_dialer_close
+    :: Dialer
     -> IO CInt
 
 foreign import ccall "nng_listen"
-  c_nng_listen
-    :: NngSocket
+  nng_listen
+    :: Socket
     -> CString
-    -> Ptr NngListener
+    -> Ptr Listener
     -> CInt
     -> IO CInt
 
 foreign import ccall safe "nng_recv"
-  c_nng_recv
-    :: NngSocket
+  nng_recv
+    :: Socket
     -> Ptr a
     -> Ptr CSize
     -> CInt
     -> IO CInt
 
 foreign import ccall unsafe "nng_recv"
-  c_nng_recv_unsafe
-    :: NngSocket
+  nng_recv_unsafe
+    :: Socket
     -> Ptr a
     -> Ptr CSize
     -> CInt
     -> IO CInt
 
 foreign import ccall unsafe "nng_rep0_open"
-  c_nng_rep0_open
-    :: Ptr NngSocket
+  nng_rep0_open
+    :: Ptr Socket
     -> IO CInt
 
 foreign import ccall unsafe "nng_req0_open"
-  c_nng_req0_open
-    :: Ptr NngSocket
+  nng_req0_open
+    :: Ptr Socket
     -> IO CInt
 
 foreign import ccall safe "nng_send"
-  c_nng_send
-    :: NngSocket
+  nng_send
+    :: Socket
     -> Ptr a
     -> CSize
     -> CInt
     -> IO CInt
 
 foreign import ccall unsafe "nng_send"
-  c_nng_send_unsafe
-    :: NngSocket
+  nng_send_unsafe
+    :: Socket
     -> Ptr a
     -> CSize
     -> CInt
     -> IO CInt
 
 foreign import ccall "nng_strerror"
-  c_nng_strerror
+  nng_strerror
     :: CInt
     -> CString
 
 foreign import ccall "nng_version"
-  c_nng_version
+  nng_version
     :: CString

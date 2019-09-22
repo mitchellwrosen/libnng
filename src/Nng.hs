@@ -5,14 +5,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Nng
-  ( NngSocket
-  , NngSocketType(..)
-  , SNngSocketType(..)
-  , openNngSocket
-  , closeNngSocket
-  , nngDial
-  , nngListen
-  , nngSendByteString
+  ( Socket
+  , SocketType(..)
+  , SSocketType(..)
+  , openSocket
+  , closeSocket
+  , dial
+  , listen
+  , sendByteString
   ) where
 
 import Data.ByteString (ByteString)
@@ -25,79 +25,78 @@ import qualified Data.ByteString as ByteString
 import qualified Data.ByteString.Unsafe as ByteString
 import qualified Data.Text.Encoding as Text
 
-import Libnng hiding (NngSocket)
 import qualified Libnng
 
 
--- TODO NngAddress more protocols
-data NngAddress
-  = NngAddress'Inproc Text
+-- TODO Address more protocols
+data Address
+  = Address'Inproc Text
 
-nngAddressAsCString
-  :: NngAddress
+addressAsCString
+  :: Address
   -> ( CString -> IO a )
   -> IO a
-nngAddressAsCString address =
+addressAsCString address =
   ByteString.useAsCString
-    ( Text.encodeUtf8 ( nngAddressToText address ) )
+    ( Text.encodeUtf8 ( addressToText address ) )
 
-nngAddressToText
-  :: NngAddress
+addressToText
+  :: Address
   -> Text
-nngAddressToText = \case
-  NngAddress'Inproc address -> "inproc://" <> address
+addressToText = \case
+  Address'Inproc address -> "inproc://" <> address
 
-newtype NngSocket ( ty :: NngSocketType )
-  = NngSocket { unNngSocket :: Libnng.NngSocket }
+newtype Socket ( ty :: SocketType )
+  = Socket { unSocket :: Libnng.Socket }
 
-data NngSocketType
-  = NngSocketType'Rep
-  | NngSocketType'Req
+data SocketType
+  = SocketType'Rep
+  | SocketType'Req
 
-data SNngSocketType :: NngSocketType -> Type where
-  SNngSocketType'Rep :: SNngSocketType 'NngSocketType'Rep
-  SNngSocketType'Req :: SNngSocketType 'NngSocketType'Req
+data SSocketType :: SocketType -> Type where
+  SSocketType'Rep :: SSocketType 'SocketType'Rep
+  SSocketType'Req :: SSocketType 'SocketType'Req
 
 
-openNngSocket
-  :: SNngSocketType ty
-  -> IO ( Either Int ( NngSocket ty ) )
-openNngSocket = \case
-  SNngSocketType'Rep ->
-    nng_rep0_open <&> \case
+openSocket
+  :: SSocketType ty
+  -> IO ( Either Int ( Socket ty ) )
+openSocket = \case
+  SSocketType'Rep ->
+    Libnng.rep0_open <&> \case
       Left err ->
         Left ( fromIntegral err )
 
       Right socket ->
-        Right ( NngSocket socket )
+        Right ( Socket socket )
 
-  SNngSocketType'Req ->
-    nng_req0_open <&> \case
+  SSocketType'Req ->
+    Libnng.req0_open <&> \case
       Left err ->
         Left ( fromIntegral err )
 
       Right socket ->
-        Right ( NngSocket socket )
+        Right ( Socket socket )
 
-closeNngSocket
-  :: NngSocket ty
+closeSocket
+  :: Socket ty
   -> IO ( Either Int () )
-closeNngSocket socket =
-  nng_close ( unNngSocket socket ) <&> \case
+closeSocket socket =
+  Libnng.close ( unSocket socket ) <&> \case
     Left err ->
       Left ( fromIntegral err )
 
     Right () ->
       Right ()
 
--- TODO nngDial flags
--- TODO nngDial type safety
-nngDial
-  :: NngSocket ty
-  -> NngAddress
-  -> IO ( Either Int NngDialer )
-nngDial socket address =
-  dial <&> \case
+-- TODO dial flags
+-- TODO dial type safety
+dial
+  :: Socket ty
+  -> Address
+  -> IO ( Either Int Libnng.Dialer )
+dial socket address =
+  doDial <&> \case
     Left err ->
       Left ( fromIntegral err )
 
@@ -105,25 +104,25 @@ nngDial socket address =
       Right dialer
 
   where
-    dial :: IO ( Either CInt NngDialer )
-    dial =
-      nngAddressAsCString
+    doDial :: IO ( Either CInt Libnng.Dialer )
+    doDial =
+      addressAsCString
         address
         ( \c_address ->
-            nng_dial
-              ( unNngSocket socket )
+            Libnng.dial
+              ( unSocket socket )
               c_address
               0
         )
 
--- TODO nngListen flags
--- TODO nngListen type safety
-nngListen
-  :: NngSocket ty
-  -> NngAddress
-  -> IO ( Either Int NngListener )
-nngListen socket address =
-  listen <&> \case
+-- TODO listen flags
+-- TODO listen type safety
+listen
+  :: Socket ty
+  -> Address
+  -> IO ( Either Int Libnng.Listener )
+listen socket address =
+  doListen <&> \case
     Left err ->
       Left ( fromIntegral err )
 
@@ -131,25 +130,25 @@ nngListen socket address =
       Right listener
 
   where
-    listen :: IO ( Either CInt NngListener )
-    listen =
-      nngAddressAsCString
+    doListen :: IO ( Either CInt Libnng.Listener )
+    doListen =
+      addressAsCString
         address
         ( \c_address ->
-            nng_listen
-              ( unNngSocket socket )
+            Libnng.listen
+              ( unSocket socket )
               c_address
               0
         )
 
--- TODO nngSendByteString flags
--- TODO nngSendByteString type safety
-nngSendByteString
-  :: NngSocket ty
+-- TODO sendByteString flags
+-- TODO sendByteString type safety
+sendByteString
+  :: Socket ty
   -> ByteString
   -> IO ( Either Int () )
-nngSendByteString socket bytes =
-  send <&> \case
+sendByteString socket bytes =
+  doSend <&> \case
     Left err ->
       Left ( fromIntegral err )
 
@@ -157,13 +156,13 @@ nngSendByteString socket bytes =
       Right ()
 
   where
-    send :: IO ( Either CInt () )
-    send =
+    doSend :: IO ( Either CInt () )
+    doSend =
       ByteString.unsafeUseAsCStringLen
         bytes
         ( \( ptr, len ) ->
-            nng_send
-              ( unNngSocket socket )
+            Libnng.send
+              ( unSocket socket )
               ptr
               ( fromIntegral len )
               0
