@@ -27,11 +27,11 @@ passed =
 
 main :: IO ()
 main = do
-  do
-    names <-
-      Set.fromList . lines <$>
-        ( readFile ".testcache" <|> pure "" )
-    writeIORef passed names
+  names <-
+    Set.fromList . lines <$>
+      ( readFile ".testcache" <|> pure "" )
+  let cached = length names
+  writeIORef passed names
 
   test_close
   test_dial
@@ -41,9 +41,10 @@ main = do
   test_req0_open
   test_strerror
 
-  do
-    names <- readIORef passed
-    writeFile ".testcache" ( unlines ( Set.toList names ) )
+  putStrLn ( show cached ++ " tests cached (rm .testcache to run again)" )
+
+  names' <- readIORef passed
+  writeFile ".testcache" ( unlines ( Set.toList names' ) )
 
 test_close :: IO ()
 test_close = do
@@ -195,14 +196,11 @@ test
 test name action = do
   names <- readIORef passed
 
-  if Set.member name names
-    then
-      putStrLn ( "-- " ++ name )
-    else do
-      putStrLn name
-      try action >>= \case
-        Left ( _ :: SomeException ) -> pure ()
-        Right () -> modifyIORef' passed ( Set.insert name )
+  unless ( Set.member name names ) do
+    putStrLn name
+    try action >>= \case
+      Left ( _ :: SomeException ) -> pure ()
+      Right () -> modifyIORef' passed ( Set.insert name )
 
 failure
   :: String

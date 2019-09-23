@@ -1,35 +1,43 @@
-{-# LANGUAGE BlockArguments      #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE BlockArguments       #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE DerivingStrategies   #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE KindSignatures       #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Nng
   ( Socket
   , SocketType(..)
   , SSocketType(..)
   , CanSend
+  , CanReceive
+  , Address(..)
   , Error(..)
   , openSocket
   , closeSocket
   , dial
+  , closeDialer
   , listen
+  , closeListener
   , sendByteString
   , recvByteString
   ) where
 
 import Data.ByteString (ByteString)
 import Data.Functor ((<&>))
-import Data.Kind (Type)
+import Data.Kind (Constraint, Type)
 import Data.Text (Text)
 import Foreign
 import Foreign.C
+import GHC.TypeLits (TypeError)
 import qualified Data.ByteString as ByteString
 import qualified Data.ByteString.Unsafe as ByteString
 import qualified Data.Text.Encoding as Text
+import qualified GHC.TypeLits as TypeError (ErrorMessage(..))
 
 import qualified Libnng
 
@@ -56,20 +64,58 @@ newtype Socket ( ty :: SocketType )
   = Socket { unSocket :: Libnng.Socket }
 
 data SocketType
-  = SocketType'Rep
+  = SocketType'Bus
+  | SocketType'Pair
+  | SocketType'Pub
+  | SocketType'Pull
+  | SocketType'Push
+  | SocketType'Rep
   | SocketType'Req
+  | SocketType'Respondent
+  | SocketType'Sub
+  | SocketType'Surveyor
 
 data SSocketType :: SocketType -> Type where
-  SSocketType'Rep :: SSocketType 'SocketType'Rep
-  SSocketType'Req :: SSocketType 'SocketType'Req
+  SSocketType'Bus        :: SSocketType 'SocketType'Bus
+  SSocketType'Pair       :: SSocketType 'SocketType'Pair
+  SSocketType'Pub        :: SSocketType 'SocketType'Pub
+  SSocketType'Pull       :: SSocketType 'SocketType'Pull
+  SSocketType'Push       :: SSocketType 'SocketType'Push
+  SSocketType'Rep        :: SSocketType 'SocketType'Rep
+  SSocketType'Req        :: SSocketType 'SocketType'Req
+  SSocketType'Respondent :: SSocketType 'SocketType'Respondent
+  SSocketType'Sub        :: SSocketType 'SocketType'Sub
+  SSocketType'Surveyor   :: SSocketType 'SocketType'Surveyor
 
-type family CanSend (ty :: SocketType) :: Bool where
-  CanSend 'SocketType'Rep = 'True
-  CanSend 'SocketType'Req = 'True
+type family CanSend (ty :: SocketType) :: Constraint where
+  CanSend 'SocketType'Bus        = ()
+  CanSend 'SocketType'Pair       = ()
+  CanSend 'SocketType'Pub        = ()
+  CanSend 'SocketType'Push       = ()
+  CanSend 'SocketType'Rep        = ()
+  CanSend 'SocketType'Req        = ()
+  CanSend 'SocketType'Respondent = ()
+  CanSend 'SocketType'Surveyor   = ()
 
-type family CanReceive (ty :: SocketType) :: Bool where
-  CanReceive 'SocketType'Rep = 'True
-  CanReceive 'SocketType'Req = 'True
+  CanSend 'SocketType'Pull =
+    TypeError ( 'TypeError.Text "You may not send on a pull socket" )
+  CanSend 'SocketType'Sub =
+    TypeError ( 'TypeError.Text "You may not send on a sub socket" )
+
+type family CanReceive (ty :: SocketType) :: Constraint where
+  CanReceive 'SocketType'Bus        = ()
+  CanReceive 'SocketType'Pair       = ()
+  CanReceive 'SocketType'Pull       = ()
+  CanReceive 'SocketType'Rep        = ()
+  CanReceive 'SocketType'Req        = ()
+  CanReceive 'SocketType'Respondent = ()
+  CanReceive 'SocketType'Sub        = ()
+  CanReceive 'SocketType'Surveyor   = ()
+
+  CanReceive 'SocketType'Pub =
+    TypeError ( 'TypeError.Text "You may not receive on a pub socket" )
+  CanReceive 'SocketType'Push =
+    TypeError ( 'TypeError.Text "You may not receive on a push socket" )
 
 data Error
   = Error'Interrupted
@@ -102,6 +148,7 @@ data Error
   | Error'OptionRequiresArgument
   | Error'AmbiguousOption
   | Error'IncorrectType
+  deriving stock ( Eq, Show )
 
 cintToError
   :: CInt
@@ -143,32 +190,34 @@ openSocket
   :: SSocketType ty
   -> IO ( Either Error ( Socket ty ) )
 openSocket = \case
-  SSocketType'Rep ->
-    Libnng.rep0_open <&> \case
-      Left err ->
-        Left ( cintToError err )
+  SSocketType'Bus        -> open Libnng.bus0_open
+  SSocketType'Pair       -> open Libnng.pair1_open
+  SSocketType'Pub        -> open Libnng.pub0_open
+  SSocketType'Pull       -> open Libnng.pull0_open
+  SSocketType'Push       -> open Libnng.push0_open
+  SSocketType'Rep        -> open Libnng.rep0_open
+  SSocketType'Req        -> open Libnng.req0_open
+  SSocketType'Respondent -> open Libnng.respondent0_open
+  SSocketType'Sub        -> open Libnng.sub0_open
+  SSocketType'Surveyor   -> open Libnng.surveyor0_open
 
-      Right socket ->
-        Right ( Socket socket )
+  where
+    open
+      :: IO ( Either CInt Libnng.Socket )
+      -> IO ( Either Error ( Socket ty ) )
+    open f =
+      f <&> \case
+        Left err ->
+          Left ( cintToError err )
 
-  SSocketType'Req ->
-    Libnng.req0_open <&> \case
-      Left err ->
-        Left ( cintToError err )
-
-      Right socket ->
-        Right ( Socket socket )
+        Right socket ->
+          Right ( Socket socket )
 
 closeSocket
   :: Socket ty
   -> IO ( Either Error () )
 closeSocket socket =
-  Libnng.close ( unSocket socket ) <&> \case
-    Left err ->
-      Left ( cintToError err )
-
-    Right () ->
-      Right ()
+  errnoToError ( Libnng.close ( unSocket socket ) )
 
 -- TODO dial flags
 -- TODO dial type safety
@@ -177,17 +226,8 @@ dial
   -> Address
   -> IO ( Either Error Libnng.Dialer )
 dial socket address =
-  doDial <&> \case
-    Left err ->
-      Left ( cintToError err )
-
-    Right dialer ->
-      Right dialer
-
-  where
-    doDial :: IO ( Either CInt Libnng.Dialer )
-    doDial =
-      addressAsCString
+  errnoToError
+    ( addressAsCString
         address
         ( \c_address ->
             Libnng.dial
@@ -195,6 +235,13 @@ dial socket address =
               c_address
               0
         )
+    )
+
+closeDialer
+  :: Libnng.Dialer
+  -> IO ( Either Error () )
+closeDialer dialer =
+  errnoToError ( Libnng.dialer_close dialer )
 
 -- TODO listen flags
 -- TODO listen type safety
@@ -203,17 +250,8 @@ listen
   -> Address
   -> IO ( Either Error Libnng.Listener )
 listen socket address =
-  doListen <&> \case
-    Left err ->
-      Left ( cintToError err )
-
-    Right listener ->
-      Right listener
-
-  where
-    doListen :: IO ( Either CInt Libnng.Listener )
-    doListen =
-      addressAsCString
+  errnoToError
+    ( addressAsCString
         address
         ( \c_address ->
             Libnng.listen
@@ -221,25 +259,23 @@ listen socket address =
               c_address
               0
         )
+    )
+
+closeListener
+  :: Libnng.Listener
+  -> IO ( Either Error () )
+closeListener listener =
+  errnoToError ( Libnng.listener_close listener )
 
 -- TODO sendByteString flags
 sendByteString
-  :: ( CanSend ty ~ 'True )
+  :: CanSend ty
   => Socket ty
   -> ByteString
   -> IO ( Either Error () )
 sendByteString socket bytes =
-  doSend <&> \case
-    Left err ->
-      Left ( cintToError err )
-
-    Right () ->
-      Right ()
-
-  where
-    doSend :: IO ( Either CInt () )
-    doSend =
-      ByteString.unsafeUseAsCStringLen
+  errnoToError
+    ( ByteString.unsafeUseAsCStringLen
         bytes
         ( \( ptr, len ) ->
             Libnng.send
@@ -248,26 +284,18 @@ sendByteString socket bytes =
               ( fromIntegral len )
               0
         )
+    )
 
 -- | TODO recvByteString async exception safety
 recvByteString
-  :: ( CanReceive ty ~ 'True )
+  :: CanReceive ty
   => Socket ty
   -> IO ( Either Error ByteString )
 recvByteString socket =
-  doRecv <&> \case
-    Left err ->
-      Left ( cintToError err )
-
-    Right message ->
-      Right message
-
-  where
-    doRecv :: IO ( Either CInt ByteString )
-    doRecv =
-      alloca \ptrPtr ->
+  errnoToError
+    ( alloca \ptrPtr ->
         alloca \lenPtr ->
-          doRecv2 ptrPtr lenPtr >>= \case
+          doRecv ptrPtr lenPtr >>= \case
             Left err ->
               pure ( Left err )
 
@@ -283,14 +311,34 @@ recvByteString socket =
                   ptr
                   ( fromIntegral len )
                   ( Libnng.free ptr len )
+    )
 
-    doRecv2
+  where
+    doRecv
       :: Ptr ( Ptr Word8 )
       -> Ptr CSize
       -> IO ( Either CInt () )
-    doRecv2 ptrPtr lenPtr =
+    doRecv ptrPtr lenPtr =
       Libnng.recv
         ( unSocket socket )
         ptrPtr
         lenPtr
-        1 -- NNG_FLAG_ALLOC
+        Libnng.fLAG_ALLOC
+
+
+--------------------------------------------------------------------------------
+-- Misc. helpers
+--------------------------------------------------------------------------------
+
+errnoToError
+  :: IO ( Either CInt a )
+  -> IO ( Either Error a )
+errnoToError =
+  fmap
+    ( \case
+        Left err ->
+          Left ( cintToError err )
+
+        Right x ->
+          Right x
+    )

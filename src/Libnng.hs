@@ -8,8 +8,8 @@
 
 module Libnng
   ( Aio
-  , Dialer
-  , Listener
+  , Dialer(..)
+  , Listener(..)
   , Socket(..)
     -- * Common functions
   -- , alloc
@@ -28,21 +28,23 @@ module Libnng
   -- , setopt
     -- * Connection management
   , dial
+  , dial_unsafe
   , dial_
+  , dial_unsafe_
   , dialer_close
-  -- , dialer_create
+  , dialer_create
   -- , dialer_getopt
-  -- , dialer_id
-  -- , dialer_setopt
-  -- , dialer_start
+  , dialer_setopt_bool
+  , dialer_setopt_int
+  , dialer_start
+  , dialer_start_unsafe
   , listen
   , listen_
-  -- , listener_close
-  -- , listener_create
+  , listener_close
+  , listener_create
   -- , listener_getopt
-  -- , listener_id
   -- , listener_setopt
-  -- , listener_start
+  , listener_start
   -- , pipe_close
   -- , pipe_dialer
   -- , pipe_getopt
@@ -76,16 +78,17 @@ module Libnng
   -- , msg_header_trim
     -- * Asynchronous operations
     -- * Protocols
-  -- , bus_open
-  -- , pair_open
-  -- , pub_open
-  -- , pull_open
-  -- , push_open
+  , bus0_open
+  , pair0_open
+  , pair1_open
+  , pub0_open
+  , pull0_open
+  , push0_open
   , rep0_open
   , req0_open
-  -- , respondent_open
-  -- , sub_open
-  -- , surveyor_open
+  , respondent0_open
+  , sub0_open
+  , surveyor0_open
     -- * Transports
   -- , inproregister
   -- , ipregister
@@ -105,6 +108,8 @@ module Libnng
     -- ** HTTP client functions
     -- ** HTTP server functions
     -- * TLS configuration objects
+    -- * Flags
+  , fLAG_ALLOC
   ) where
 
 import Data.Word (Word32)
@@ -116,12 +121,12 @@ newtype Aio
   = Aio ( Ptr () )
 
 newtype Dialer
-  = Dialer Word32
+  = Dialer { dialer_id :: Word32 }
   deriving stock ( Eq, Show )
   deriving newtype ( Storable )
 
 newtype Listener
-  = Listener Word32
+  = Listener { listener_id :: Word32 }
   deriving stock ( Eq, Show )
   deriving newtype ( Storable )
 
@@ -131,13 +136,18 @@ newtype Socket
   deriving newtype ( Storable )
 
 
+bus0_open :: IO ( Either CInt Socket )
+bus0_open =
+  alloca \socketPtr ->
+    nng_bus0_open socketPtr >>= \case
+      0 -> Right <$> peek socketPtr
+      n -> pure ( Left n )
+
 close
   :: Socket
   -> IO ( Either CInt () )
 close socket =
-  nng_close socket >>= \case
-    0 -> pure ( Right () )
-    n -> pure ( Left n )
+  errnoToEither ( nng_close socket )
 
 dial
   :: Socket
@@ -145,8 +155,19 @@ dial
   -> CInt
   -> IO ( Either CInt Dialer )
 dial socket url flags =
-  allocaBytes 4 \dialerPtr -> do
+  alloca \dialerPtr ->
     nng_dial socket url dialerPtr flags >>= \case
+      0 -> Right <$> peek dialerPtr
+      n -> pure ( Left n )
+
+dial_unsafe
+  :: Socket
+  -> CString
+  -> CInt
+  -> IO ( Either CInt Dialer )
+dial_unsafe socket url flags =
+  alloca \dialerPtr ->
+    nng_dial_unsafe socket url dialerPtr flags >>= \case
       0 -> Right <$> peek dialerPtr
       n -> pure ( Left n )
 
@@ -156,17 +177,61 @@ dial_
   -> CInt
   -> IO ( Either CInt () )
 dial_ socket url flags =
-  nng_dial socket url nullPtr flags >>= \case
-    0 -> pure ( Right () )
-    n -> pure ( Left n )
+  errnoToEither ( nng_dial socket url nullPtr flags )
+
+dial_unsafe_
+  :: Socket
+  -> CString
+  -> CInt
+  -> IO ( Either CInt () )
+dial_unsafe_ socket url flags =
+  errnoToEither ( nng_dial_unsafe socket url nullPtr flags )
 
 dialer_close
   :: Dialer
   -> IO ( Either CInt () )
 dialer_close dialer =
-  nng_dialer_close dialer >>= \case
-    0 -> pure ( Right () )
-    n -> pure ( Left n )
+  errnoToEither ( nng_dialer_close dialer )
+
+dialer_create
+  :: Socket
+  -> CString
+  -> IO ( Either CInt Dialer )
+dialer_create socket url =
+  alloca \dialerPtr ->
+    nng_dialer_create dialerPtr socket url >>= \case
+      0 -> Right <$> peek dialerPtr
+      n -> pure ( Left n )
+
+dialer_setopt_bool
+  :: Dialer
+  -> CString
+  -> Bool
+  -> IO ( Either CInt () )
+dialer_setopt_bool dialer opt val =
+  errnoToEither ( nng_dialer_setopt_bool dialer opt val )
+
+dialer_setopt_int
+  :: Dialer
+  -> CString
+  -> CInt
+  -> IO ( Either CInt () )
+dialer_setopt_int dialer opt val =
+  errnoToEither ( nng_dialer_setopt_int dialer opt val )
+
+dialer_start
+  :: Dialer
+  -> CInt
+  -> IO ( Either CInt () )
+dialer_start dialer flags =
+  errnoToEither ( nng_dialer_start dialer flags )
+
+dialer_start_unsafe
+  :: Dialer
+  -> CInt
+  -> IO ( Either CInt () )
+dialer_start_unsafe dialer flags =
+  errnoToEither ( nng_dialer_start_unsafe dialer flags )
 
 free
   :: Ptr a
@@ -181,7 +246,7 @@ listen
   -> CInt
   -> IO ( Either CInt Listener )
 listen socket url flags =
-  allocaBytes 4 \listenerPtr ->
+  alloca \listenerPtr ->
     nng_listen socket url listenerPtr flags >>= \case
       0 -> Right <$> peek listenerPtr
       n -> pure ( Left n )
@@ -192,9 +257,64 @@ listen_
   -> CInt
   -> IO ( Either CInt () )
 listen_ socket url flags =
-  nng_listen socket url nullPtr flags >>= \case
-    0 -> pure ( Right () )
-    n -> pure ( Left n )
+  errnoToEither ( nng_listen socket url nullPtr flags )
+
+listener_close
+  :: Listener
+  -> IO ( Either CInt () )
+listener_close listener =
+  errnoToEither ( nng_listener_close listener )
+
+listener_create
+  :: Socket
+  -> CString
+  -> IO ( Either CInt Listener )
+listener_create socket url =
+  alloca \listenerPtr ->
+    nng_listener_create listenerPtr socket url >>= \case
+      0 -> Right <$> peek listenerPtr
+      n -> pure ( Left n )
+
+listener_start
+  :: Listener
+  -> IO ( Either CInt () )
+listener_start listener =
+  errnoToEither ( nng_listener_start listener 0 )
+
+pair0_open :: IO ( Either CInt Socket )
+pair0_open =
+  alloca \socketPtr ->
+    nng_pair0_open socketPtr >>= \case
+      0 -> Right <$> peek socketPtr
+      n -> pure ( Left n )
+
+pair1_open :: IO ( Either CInt Socket )
+pair1_open =
+  alloca \socketPtr ->
+    nng_pair1_open socketPtr >>= \case
+      0 -> Right <$> peek socketPtr
+      n -> pure ( Left n )
+
+pub0_open :: IO ( Either CInt Socket )
+pub0_open =
+  alloca \socketPtr ->
+    nng_pub0_open socketPtr >>= \case
+      0 -> Right <$> peek socketPtr
+      n -> pure ( Left n )
+
+pull0_open :: IO ( Either CInt Socket )
+pull0_open =
+  alloca \socketPtr ->
+    nng_pull0_open socketPtr >>= \case
+      0 -> Right <$> peek socketPtr
+      n -> pure ( Left n )
+
+push0_open :: IO ( Either CInt Socket )
+push0_open =
+  alloca \socketPtr ->
+    nng_push0_open socketPtr >>= \case
+      0 -> Right <$> peek socketPtr
+      n -> pure ( Left n )
 
 recv
   :: Socket
@@ -203,9 +323,7 @@ recv
   -> CInt
   -> IO ( Either CInt () )
 recv socket data_ size flags =
-  nng_recv socket data_ size flags >>= \case
-    0 -> pure ( Right () )
-    n -> pure ( Left n )
+  errnoToEither ( nng_recv socket data_ size flags )
 
 recv_unsafe
   :: Socket
@@ -214,21 +332,40 @@ recv_unsafe
   -> CInt
   -> IO ( Either CInt () )
 recv_unsafe socket data_ size flags =
-  nng_recv_unsafe socket data_ size flags >>= \case
-    0 -> pure ( Right () )
-    n -> pure ( Left n )
+  errnoToEither ( nng_recv_unsafe socket data_ size flags )
 
 rep0_open :: IO ( Either CInt Socket )
 rep0_open =
-  allocaBytes 4 \socketPtr ->
+  alloca \socketPtr ->
     nng_rep0_open socketPtr >>= \case
       0 -> Right <$> peek socketPtr
       n -> pure ( Left n )
 
 req0_open :: IO ( Either CInt Socket )
 req0_open =
-  allocaBytes 4 \socketPtr ->
+  alloca \socketPtr ->
     nng_req0_open socketPtr >>= \case
+      0 -> Right <$> peek socketPtr
+      n -> pure ( Left n )
+
+respondent0_open :: IO ( Either CInt Socket )
+respondent0_open =
+  alloca \socketPtr ->
+    nng_respondent0_open socketPtr >>= \case
+      0 -> Right <$> peek socketPtr
+      n -> pure ( Left n )
+
+sub0_open :: IO ( Either CInt Socket )
+sub0_open =
+  alloca \socketPtr ->
+    nng_sub0_open socketPtr >>= \case
+      0 -> Right <$> peek socketPtr
+      n -> pure ( Left n )
+
+surveyor0_open :: IO ( Either CInt Socket )
+surveyor0_open =
+  alloca \socketPtr ->
+    nng_surveyor0_open socketPtr >>= \case
       0 -> Right <$> peek socketPtr
       n -> pure ( Left n )
 
@@ -239,9 +376,7 @@ send
   -> CInt
   -> IO ( Either CInt () )
 send socket data_ size flags =
-  nng_send socket data_ size flags >>= \case
-    0 -> pure ( Right () )
-    n -> pure ( Left n )
+  errnoToEither ( nng_send socket data_ size flags )
 
 send_unsafe
   :: Socket
@@ -250,9 +385,7 @@ send_unsafe
   -> CInt
   -> IO ( Either CInt () )
 send_unsafe socket data_ size flags =
-  nng_send_unsafe socket data_ size flags >>= \case
-    0 -> pure ( Right () )
-    n -> pure ( Left n )
+  errnoToEither ( nng_send_unsafe socket data_ size flags )
 
 strerror
   :: CInt
@@ -266,11 +399,39 @@ version =
 
 
 --------------------------------------------------------------------------------
--- Foreign imports
--- TODO safe, unsafe, wha?
+-- Flags
 --------------------------------------------------------------------------------
 
-foreign import ccall "nng_close"
+fLAG_ALLOC :: CInt
+fLAG_ALLOC =
+  1
+
+
+--------------------------------------------------------------------------------
+-- Misc. helpers
+--------------------------------------------------------------------------------
+
+errnoToEither
+  :: IO CInt
+  -> IO ( Either CInt () )
+errnoToEither =
+  fmap
+    ( \case
+        0 -> Right ()
+        n -> Left n
+    )
+
+
+--------------------------------------------------------------------------------
+-- Foreign imports
+--------------------------------------------------------------------------------
+
+foreign import ccall unsafe "nng_bus0_open"
+  nng_bus0_open
+    :: Ptr Socket
+    -> IO CInt
+
+foreign import ccall unsafe "nng_close"
   nng_close
     :: Socket
     -> IO CInt
@@ -283,9 +444,50 @@ foreign import ccall "nng_dial"
     -> CInt
     -> IO CInt
 
-foreign import ccall "nng_dialer_close"
+foreign import ccall unsafe "nng_dial"
+  nng_dial_unsafe
+    :: Socket
+    -> CString
+    -> Ptr Dialer
+    -> CInt
+    -> IO CInt
+
+foreign import ccall unsafe "nng_dialer_close"
   nng_dialer_close
     :: Dialer
+    -> IO CInt
+
+foreign import ccall unsafe "nng_dialer_create"
+  nng_dialer_create
+    :: Ptr Dialer
+    -> Socket
+    -> CString
+    -> IO CInt
+
+foreign import ccall unsafe "nng_dialer_setopt_bool"
+  nng_dialer_setopt_bool
+    :: Dialer
+    -> CString
+    -> Bool
+    -> IO CInt
+
+foreign import ccall unsafe "nng_dialer_setopt_int"
+  nng_dialer_setopt_int
+    :: Dialer
+    -> CString
+    -> CInt
+    -> IO CInt
+
+foreign import ccall "nng_dialer_start"
+  nng_dialer_start
+    :: Dialer
+    -> CInt
+    -> IO CInt
+
+foreign import ccall unsafe "nng_dialer_start"
+  nng_dialer_start_unsafe
+    :: Dialer
+    -> CInt
     -> IO CInt
 
 foreign import ccall unsafe "nng_free"
@@ -294,12 +496,55 @@ foreign import ccall unsafe "nng_free"
     -> CSize
     -> IO ()
 
-foreign import ccall "nng_listen"
+foreign import ccall unsafe "nng_listen"
   nng_listen
     :: Socket
     -> CString
     -> Ptr Listener
     -> CInt
+    -> IO CInt
+
+foreign import ccall unsafe "nng_listener_close"
+  nng_listener_close
+    :: Listener
+    -> IO CInt
+
+foreign import ccall unsafe "nng_listener_create"
+  nng_listener_create
+    :: Ptr Listener
+    -> Socket
+    -> CString
+    -> IO CInt
+
+foreign import ccall unsafe "nng_listener_start"
+  nng_listener_start
+    :: Listener
+    -> CInt
+    -> IO CInt
+
+foreign import ccall unsafe "nng_pair0_open"
+  nng_pair0_open
+    :: Ptr Socket
+    -> IO CInt
+
+foreign import ccall unsafe "nng_pair1_open"
+  nng_pair1_open
+    :: Ptr Socket
+    -> IO CInt
+
+foreign import ccall unsafe "nng_pub0_open"
+  nng_pub0_open
+    :: Ptr Socket
+    -> IO CInt
+
+foreign import ccall unsafe "nng_pull0_open"
+  nng_pull0_open
+    :: Ptr Socket
+    -> IO CInt
+
+foreign import ccall unsafe "nng_push0_open"
+  nng_push0_open
+    :: Ptr Socket
     -> IO CInt
 
 foreign import ccall safe "nng_recv"
@@ -328,6 +573,11 @@ foreign import ccall unsafe "nng_req0_open"
     :: Ptr Socket
     -> IO CInt
 
+foreign import ccall unsafe "nng_respondent0_open"
+  nng_respondent0_open
+    :: Ptr Socket
+    -> IO CInt
+
 foreign import ccall safe "nng_send"
   nng_send
     :: Socket
@@ -348,6 +598,16 @@ foreign import ccall "nng_strerror"
   nng_strerror
     :: CInt
     -> CString
+
+foreign import ccall unsafe "nng_sub0_open"
+  nng_sub0_open
+    :: Ptr Socket
+    -> IO CInt
+
+foreign import ccall unsafe "nng_surveyor0_open"
+  nng_surveyor0_open
+    :: Ptr Socket
+    -> IO CInt
 
 foreign import ccall "nng_version"
   nng_version
