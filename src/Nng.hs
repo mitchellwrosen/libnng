@@ -1,5 +1,6 @@
 {-# LANGUAGE BlockArguments       #-}
 {-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE DeriveAnyClass       #-}
 {-# LANGUAGE DerivingStrategies   #-}
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE KindSignatures       #-}
@@ -8,6 +9,7 @@
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ViewPatterns         #-}
 
 module Nng
   ( Socket
@@ -15,18 +17,24 @@ module Nng
   , SSocketType(..)
   , CanSend
   , CanReceive
-  , Address(..)
   , Error(..)
   , openSocket
   , closeSocket
   , dial
+  , dial_
   , closeDialer
   , listen
+  , listen_
   , closeListener
   , sendByteString
   , recvByteString
+    -- * Socket address
+  , addressFromText
+  , addressToText
+  , Address(..)
   ) where
 
+import Control.Exception (Exception)
 import Data.ByteString (ByteString)
 import Data.Functor ((<&>))
 import Data.Kind (Constraint, Type)
@@ -36,29 +44,12 @@ import Foreign.C
 import GHC.TypeLits (TypeError)
 import qualified Data.ByteString as ByteString
 import qualified Data.ByteString.Unsafe as ByteString
+import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified GHC.TypeLits as TypeError (ErrorMessage(..))
 
 import qualified Libnng
 
-
--- TODO Address more protocols
-data Address
-  = Address'Inproc Text
-
-addressAsCString
-  :: Address
-  -> ( CString -> IO a )
-  -> IO a
-addressAsCString address =
-  ByteString.useAsCString
-    ( Text.encodeUtf8 ( addressToText address ) )
-
-addressToText
-  :: Address
-  -> Text
-addressToText = \case
-  Address'Inproc address -> "inproc://" <> address
 
 newtype Socket ( ty :: SocketType )
   = Socket { unSocket :: Libnng.Socket }
@@ -149,6 +140,7 @@ data Error
   | Error'AmbiguousOption
   | Error'IncorrectType
   deriving stock ( Eq, Show )
+  deriving anyclass ( Exception )
 
 cintToError
   :: CInt
@@ -163,7 +155,7 @@ cintToError = \case
   7  -> Error'ObjectClosed
   8  -> Error'TryAgain
   9  -> Error'NotSupported
-  10  -> Error'AddressInUse
+  10 -> Error'AddressInUse
   11 -> Error'IncorrectState
   12 -> Error'EntryNotFound
   13 -> Error'ProtocolError
@@ -237,6 +229,22 @@ dial socket address =
         )
     )
 
+dial_
+  :: Socket ty
+  -> Address
+  -> IO ( Either Error () )
+dial_ socket address =
+  errnoToError
+    ( addressAsCString
+        address
+        ( \c_address ->
+            Libnng.dial_
+              ( unSocket socket )
+              c_address
+              0
+        )
+    )
+
 closeDialer
   :: Libnng.Dialer
   -> IO ( Either Error () )
@@ -261,6 +269,22 @@ listen socket address =
         )
     )
 
+listen_
+  :: Socket ty
+  -> Address
+  -> IO ( Either Error () )
+listen_ socket address =
+  errnoToError
+    ( addressAsCString
+        address
+        ( \c_address ->
+            Libnng.listen_
+              ( unSocket socket )
+              c_address
+              0
+        )
+    )
+
 closeListener
   :: Libnng.Listener
   -> IO ( Either Error () )
@@ -268,6 +292,7 @@ closeListener listener =
   errnoToError ( Libnng.listener_close listener )
 
 -- TODO sendByteString flags
+-- TODO recvByteString handle EAGAIN
 sendByteString
   :: CanSend ty
   => Socket ty
@@ -278,15 +303,16 @@ sendByteString socket bytes =
     ( ByteString.unsafeUseAsCStringLen
         bytes
         ( \( ptr, len ) ->
-            Libnng.send
+            Libnng.send_unsafe
               ( unSocket socket )
               ptr
               ( fromIntegral len )
-              0
+              Libnng.fLAG_NONBLOCK
         )
     )
 
--- | TODO recvByteString async exception safety
+-- TODO recvByteString async exception safety
+-- TODO recvByteString handle EAGAIN
 recvByteString
   :: CanReceive ty
   => Socket ty
@@ -319,11 +345,50 @@ recvByteString socket =
       -> Ptr CSize
       -> IO ( Either CInt () )
     doRecv ptrPtr lenPtr =
-      Libnng.recv
+      Libnng.recv_unsafe
         ( unSocket socket )
         ptrPtr
         lenPtr
-        Libnng.fLAG_ALLOC
+        ( Libnng.fLAG_ALLOC .|. Libnng.fLAG_NONBLOCK )
+
+
+--------------------------------------------------------------------------------
+-- Address
+--------------------------------------------------------------------------------
+
+-- TODO Address more protocols
+data Address
+  = Address'Inproc Text
+  | Address'Ipc Text
+
+addressAsCString
+  :: Address
+  -> ( CString -> IO a )
+  -> IO a
+addressAsCString address =
+  ByteString.useAsCString
+    ( Text.encodeUtf8 ( addressToText address ) )
+
+addressFromText
+  :: Text
+  -> Maybe Address
+addressFromText = \case
+  (Text.stripPrefix "inproc://" -> Just address) ->
+    Just ( Address'Inproc address )
+
+  (Text.stripPrefix "ipc://" -> Just address) ->
+    Just ( Address'Ipc address )
+
+  _ ->
+    Nothing
+
+addressToText
+  :: Address
+  -> Text
+addressToText = \case
+  Address'Inproc address -> "inproc://" <> address
+  Address'Ipc    address -> "ipc://"    <> address
+
 
 
 --------------------------------------------------------------------------------

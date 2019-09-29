@@ -110,6 +110,7 @@ module Libnng
     -- * TLS configuration objects
     -- * Flags
   , fLAG_ALLOC
+  , fLAG_NONBLOCK
   ) where
 
 import Data.Word (Word32)
@@ -405,6 +406,10 @@ version =
 fLAG_ALLOC :: CInt
 fLAG_ALLOC =
   1
+
+fLAG_NONBLOCK :: CInt
+fLAG_NONBLOCK =
+  2
 
 
 --------------------------------------------------------------------------------
