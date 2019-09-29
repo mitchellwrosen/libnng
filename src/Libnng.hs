@@ -21,6 +21,7 @@ module Libnng
     -- * Socket functions
   , close
   -- , getopt
+  , getopt_int
   , recv
   , recv_unsafe
   , send
@@ -133,11 +134,15 @@ module Libnng
     -- * Flags
   , fLAG_ALLOC
   , fLAG_NONBLOCK
+    -- * Options
+  , oPT_RECVFD
+  , oPT_SENDFD
   ) where
 
 import Data.Word (Word32)
 import Foreign hiding (free)
 import Foreign.C
+import System.IO.Unsafe (unsafePerformIO)
 
 
 data Aio
@@ -286,6 +291,16 @@ free
   -> IO ()
 free =
   nng_free
+
+getopt_int
+  :: Socket
+  -> CString
+  -> IO ( Either CInt CInt )
+getopt_int socket opt =
+  alloca \valPtr ->
+    nng_getopt_int socket opt valPtr >>= \case
+      0 -> Right <$> peek valPtr
+      n -> pure ( Left n )
 
 listen
   :: Socket
@@ -459,6 +474,21 @@ fLAG_NONBLOCK =
 
 
 --------------------------------------------------------------------------------
+-- Options
+--------------------------------------------------------------------------------
+
+oPT_RECVFD :: CString
+oPT_RECVFD =
+  unsafePerformIO ( newCAString "recv-fd" )
+{-# NOINLINE oPT_RECVFD #-}
+
+oPT_SENDFD :: CString
+oPT_SENDFD =
+  unsafePerformIO ( newCAString "send-fd" )
+{-# NOINLINE oPT_SENDFD #-}
+
+
+--------------------------------------------------------------------------------
 -- Misc. helpers
 --------------------------------------------------------------------------------
 
@@ -553,6 +583,13 @@ foreign import ccall unsafe "static nng_free"
     :: Ptr a
     -> CSize
     -> IO ()
+
+foreign import ccall unsafe "static nng_getopt_int"
+  nng_getopt_int
+    :: Socket
+    -> CString
+    -> Ptr CInt
+    -> IO CInt
 
 foreign import ccall unsafe "static nng_listen"
   nng_listen

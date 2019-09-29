@@ -36,12 +36,15 @@ module Nng
 
 import Control.Exception (Exception)
 import Data.ByteString (ByteString)
+import Data.Coerce (coerce)
 import Data.Functor ((<&>))
 import Data.Kind (Constraint, Type)
 import Data.Text (Text)
 import Foreign
 import Foreign.C
+import GHC.Conc (threadWaitRead)
 import GHC.TypeLits (TypeError)
+import System.Posix.Types
 import qualified Data.ByteString as ByteString
 import qualified Data.ByteString.Unsafe as ByteString
 import qualified Data.Text as Text
@@ -211,6 +214,32 @@ closeSocket
 closeSocket socket =
   errnoToError ( Libnng.close ( unSocket socket ) )
 
+getRecvFd
+  :: CanReceive ty
+  => Socket ty
+  -> IO ( Either Error Fd )
+getRecvFd socket =
+  coerce
+    ( errnoToError
+        ( Libnng.getopt_int
+            ( unSocket socket )
+            Libnng.oPT_RECVFD
+        )
+    )
+
+getSendFd
+  :: CanSend ty
+  => Socket ty
+  -> IO ( Either Error Fd )
+getSendFd socket =
+  coerce
+    ( errnoToError
+        ( Libnng.getopt_int
+            ( unSocket socket )
+            Libnng.oPT_SENDFD
+        )
+    )
+
 -- TODO dial flags
 -- TODO dial type safety
 dial
@@ -292,54 +321,89 @@ closeListener listener =
   errnoToError ( Libnng.listener_close listener )
 
 -- TODO sendByteString flags
--- TODO recvByteString handle EAGAIN
 sendByteString
   :: CanSend ty
   => Socket ty
   -> ByteString
   -> IO ( Either Error () )
 sendByteString socket bytes =
-  errnoToError
-    ( ByteString.unsafeUseAsCStringLen
-        bytes
-        ( \( ptr, len ) ->
-            Libnng.send_unsafe
-              ( unSocket socket )
-              ptr
-              ( fromIntegral len )
-              Libnng.fLAG_NONBLOCK
+  loop >>= \case
+    Left Error'TryAgain ->
+      getSendFd socket >>= \case
+        Left err ->
+          pure ( Left err )
+
+        Right sendFd -> do
+          threadWaitRead sendFd
+          loop
+
+    Left err ->
+      pure ( Left err )
+
+    Right () ->
+      pure ( Right () )
+
+  where
+    loop :: IO ( Either Error () )
+    loop =
+      errnoToError
+        ( ByteString.unsafeUseAsCStringLen
+            bytes
+            ( \( ptr, len ) ->
+                Libnng.send_unsafe
+                  ( unSocket socket )
+                  ptr
+                  ( fromIntegral len )
+                  Libnng.fLAG_NONBLOCK
+            )
         )
-    )
 
 -- TODO recvByteString async exception safety
--- TODO recvByteString handle EAGAIN
 recvByteString
   :: CanReceive ty
   => Socket ty
   -> IO ( Either Error ByteString )
 recvByteString socket =
-  errnoToError
-    ( alloca \ptrPtr ->
-        alloca \lenPtr ->
-          doRecv ptrPtr lenPtr >>= \case
-            Left err ->
-              pure ( Left err )
+  loop >>= \case
+    Left Error'TryAgain ->
+      getRecvFd socket >>= \case
+        Left err ->
+          pure ( Left err )
 
-            Right () -> do
-              ptr :: Ptr Word8 <-
-                peek ptrPtr
+        Right recvFd -> do
+          threadWaitRead recvFd
+          loop
 
-              len :: CSize <-
-                peek lenPtr
+    Left err ->
+      pure ( Left err )
 
-              Right <$>
-                ByteString.unsafePackCStringFinalizer
-                  ptr
-                  ( fromIntegral len )
-                  ( Libnng.free ptr len )
-    )
+    Right bytes ->
+      pure ( Right bytes )
 
   where
+    loop :: IO ( Either Error ByteString )
+    loop =
+      errnoToError
+        ( alloca \ptrPtr ->
+            alloca \lenPtr ->
+              doRecv ptrPtr lenPtr >>= \case
+                Left err ->
+                  pure ( Left err )
+
+                Right () -> do
+                  ptr :: Ptr Word8 <-
+                    peek ptrPtr
+
+                  len :: CSize <-
+                    peek lenPtr
+
+                  Right <$>
+                    ByteString.unsafePackCStringFinalizer
+                      ptr
+                      ( fromIntegral len )
+                      ( Libnng.free ptr len )
+        )
+
     doRecv
       :: Ptr ( Ptr Word8 )
       -> Ptr CSize
@@ -360,6 +424,7 @@ recvByteString socket =
 data Address
   = Address'Inproc Text
   | Address'Ipc Text
+  deriving stock ( Eq, Show )
 
 addressAsCString
   :: Address

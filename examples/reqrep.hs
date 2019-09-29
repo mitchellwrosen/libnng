@@ -32,27 +32,47 @@ clientMain
   :: Nng.Address
   -> IO ()
 clientMain address = do
+  putStrLn "Opening socket"
   socket :: Nng.Socket 'Nng.SocketType'Req <-
     onLeftThrowIO ( Nng.openSocket Nng.SSocketType'Req )
 
+  putStrLn ( "Dialing " ++ show address )
   onLeftThrowIO ( Nng.dial_ socket address )
 
-  putStrLn "Client: sending empty byte array"
-  Nng.sendByteString socket ""
+  putStrLn "Sending byte array"
+  onLeftThrowIO ( Nng.sendByteString socket "hello" )
 
-  response <- onLeftThrowIO ( Nng.recvByteString socket )
-  print response
+  putStrLn "Receiving byte array"
+  result <- onLeftThrowIO ( Nng.recvByteString socket )
+
+  putStrLn ( "Recevied: " ++ show result )
 
 serverMain
   :: Nng.Address
   -> IO ()
 serverMain address = do
+  putStrLn "Opening socket"
   socket :: Nng.Socket 'Nng.SocketType'Rep <-
     onLeftThrowIO ( Nng.openSocket Nng.SSocketType'Rep )
 
+  putStrLn ( "Listening on " ++ show address )
   onLeftThrowIO ( Nng.listen_ socket address )
 
-  threadDelay maxBound
+  let
+    loop :: IO ()
+    loop = do
+      putStrLn "Receiving byte array"
+      _ <- Nng.recvByteString socket
+
+      putStrLn "Sleeping for 1s"
+      threadDelay ( 1*1000*1000 )
+
+      putStrLn "Sending byte array"
+      onLeftThrowIO ( Nng.sendByteString socket "hello" )
+
+      loop
+
+  loop
 
 onLeftThrowIO
   :: Exception e
