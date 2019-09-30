@@ -33,10 +33,20 @@ library
     Libnng.Types
 
 test-suite tests
-  build-depends: base, containers, libnng
+  build-depends:
+    base,
+    containers,
+    libnng,
+    safe-exceptions,
+    tasty,
+    tasty-hunit
+  default-extensions:
+    BlockArguments
+    LambdaCase
   default-language: Haskell2010
   extra-libraries: nng
   ghc-options: -Wall -threaded
   hs-source-dirs: test
   main-is: Main.hs
+  other-modules: LibnngTests
   type: exitcode-stdio-1.0
