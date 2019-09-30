@@ -49,8 +49,12 @@ import Nng.Error
 import qualified Libnng
 
 
-newtype Socket ( ty :: SocketType )
-  = Socket { unSocket :: Libnng.Socket }
+data Socket ( ty :: SocketType )
+  = Socket
+  { socketSocket :: Libnng.Socket
+  , socketType :: SSocketType ty
+  , socketX :: SocketX ty
+  }
 
 data SocketType
   = SocketType'Bus
@@ -76,7 +80,19 @@ data SSocketType :: SocketType -> Type where
   SSocketType'Sub        :: SSocketType 'SocketType'Sub
   SSocketType'Surveyor   :: SSocketType 'SocketType'Surveyor
 
-type family CanSend (ty :: SocketType) :: Constraint where
+type family SocketX ( ty :: SocketType ) :: Type where
+  SocketX 'SocketType'Bus = ()
+  SocketX 'SocketType'Pair = ()
+  SocketX 'SocketType'Pub = ()
+  SocketX 'SocketType'Pull = ()
+  SocketX 'SocketType'Push = ()
+  SocketX 'SocketType'Rep = ()
+  SocketX 'SocketType'Req = ()
+  SocketX 'SocketType'Respondent = ()
+  SocketX 'SocketType'Sub = ()
+  SocketX 'SocketType'Surveyor = ()
+
+type family CanSend ( ty :: SocketType ) :: Constraint where
   CanSend 'SocketType'Bus        = ()
   CanSend 'SocketType'Pair       = ()
   CanSend 'SocketType'Pub        = ()
@@ -91,7 +107,7 @@ type family CanSend (ty :: SocketType) :: Constraint where
   CanSend 'SocketType'Sub =
     TypeError ( 'TypeError.Text "You may not send on a sub socket" )
 
-type family CanReceive (ty :: SocketType) :: Constraint where
+type family CanReceive ( ty :: SocketType ) :: Constraint where
   CanReceive 'SocketType'Bus        = ()
   CanReceive 'SocketType'Pair       = ()
   CanReceive 'SocketType'Pull       = ()
@@ -106,78 +122,142 @@ type family CanReceive (ty :: SocketType) :: Constraint where
   CanReceive 'SocketType'Push =
     TypeError ( 'TypeError.Text "You may not receive on a push socket" )
 
-openSocket
-  :: SSocketType ty
-  -> IO ( Either Error ( Socket ty ) )
-openSocket = \case
-  SSocketType'Bus        -> open Libnng.bus0_open
-  SSocketType'Pair       -> open Libnng.pair1_open
-  SSocketType'Pub        -> open Libnng.pub0_open
-  SSocketType'Pull       -> open Libnng.pull0_open
-  SSocketType'Push       -> open Libnng.push0_open
-  SSocketType'Rep        -> open Libnng.rep0_open
-  SSocketType'Req        -> open Libnng.req0_open
-  SSocketType'Respondent -> open Libnng.respondent0_open
-  SSocketType'Sub        -> open Libnng.sub0_open
-  SSocketType'Surveyor   -> open Libnng.surveyor0_open
-
-  where
-    open
-      :: IO ( Either CInt Libnng.Socket )
-      -> IO ( Either Error ( Socket ty ) )
-    open f =
-      f <&> \case
-        Left err ->
-          Left ( cintToError err )
-
-        Right socket ->
-          Right ( Socket socket )
 
 openBusSocket :: IO ( Either Error ( Socket 'SocketType'Bus ) )
 openBusSocket =
-  openSocket SSocketType'Bus
+  Libnng.bus0_open <&> \case
+    Left err ->
+      Left ( cintToError err )
+
+    Right socket ->
+      Right Socket
+        { socketSocket = socket
+        , socketType = SSocketType'Bus
+        , socketX = ()
+        }
 
 openPairSocket :: IO ( Either Error ( Socket 'SocketType'Pair ) )
 openPairSocket =
-  openSocket SSocketType'Pair
+  Libnng.pair1_open <&> \case
+    Left err ->
+      Left ( cintToError err )
+
+    Right socket ->
+      Right Socket
+        { socketSocket = socket
+        , socketType = SSocketType'Pair
+        , socketX = ()
+        }
 
 openPubSocket :: IO ( Either Error ( Socket 'SocketType'Pub ) )
 openPubSocket =
-  openSocket SSocketType'Pub
+  Libnng.pub0_open <&> \case
+    Left err ->
+      Left ( cintToError err )
+
+    Right socket ->
+      Right Socket
+        { socketSocket = socket
+        , socketType = SSocketType'Pub
+        , socketX = ()
+        }
 
 openPullSocket :: IO ( Either Error ( Socket 'SocketType'Pull ) )
 openPullSocket =
-  openSocket SSocketType'Pull
+  Libnng.pull0_open <&> \case
+    Left err ->
+      Left ( cintToError err )
+
+    Right socket ->
+      Right Socket
+        { socketSocket = socket
+        , socketType = SSocketType'Pull
+        , socketX = ()
+        }
 
 openPushSocket :: IO ( Either Error ( Socket 'SocketType'Push ) )
 openPushSocket =
-  openSocket SSocketType'Push
+  Libnng.push0_open <&> \case
+    Left err ->
+      Left ( cintToError err )
+
+    Right socket ->
+      Right Socket
+        { socketSocket = socket
+        , socketType = SSocketType'Push
+        , socketX = ()
+        }
 
 openRepSocket :: IO ( Either Error ( Socket 'SocketType'Rep ) )
 openRepSocket =
-  openSocket SSocketType'Rep
+  Libnng.rep0_open <&> \case
+    Left err ->
+      Left ( cintToError err )
+
+    Right socket ->
+      Right Socket
+        { socketSocket = socket
+        , socketType = SSocketType'Rep
+        , socketX = ()
+        }
 
 openReqSocket :: IO ( Either Error ( Socket 'SocketType'Req ) )
 openReqSocket =
-  openSocket SSocketType'Req
+  Libnng.req0_open <&> \case
+    Left err ->
+      Left ( cintToError err )
+
+    Right socket ->
+      Right Socket
+        { socketSocket = socket
+        , socketType = SSocketType'Req
+        , socketX = ()
+        }
 
 openRespondentSocket :: IO ( Either Error ( Socket 'SocketType'Respondent ) )
 openRespondentSocket =
-  openSocket SSocketType'Respondent
+  Libnng.respondent0_open <&> \case
+    Left err ->
+      Left ( cintToError err )
+
+    Right socket ->
+      Right Socket
+        { socketSocket = socket
+        , socketType = SSocketType'Respondent
+        , socketX = ()
+        }
 
 openSubSocket :: IO ( Either Error ( Socket 'SocketType'Sub ) )
 openSubSocket =
-  openSocket SSocketType'Sub
+  Libnng.sub0_open <&> \case
+    Left err ->
+      Left ( cintToError err )
+
+    Right socket ->
+      Right Socket
+        { socketSocket = socket
+        , socketType = SSocketType'Sub
+        , socketX = ()
+        }
 
 openSurveyorSocket :: IO ( Either Error ( Socket 'SocketType'Surveyor ) )
 openSurveyorSocket =
-  openSocket SSocketType'Surveyor
+  Libnng.surveyor0_open <&> \case
+    Left err ->
+      Left ( cintToError err )
+
+    Right socket ->
+      Right Socket
+        { socketSocket = socket
+        , socketType = SSocketType'Surveyor
+        , socketX = ()
+        }
 
 closeSocket
   :: Socket ty
   -> IO ( Either Error () )
 closeSocket socket =
-  errnoToError ( Libnng.close ( unSocket socket ) )
+  errnoToError ( Libnng.close ( socketSocket socket ) )
 
 getRecvFd
   :: CanReceive ty
@@ -187,7 +267,7 @@ getRecvFd socket =
   coerce
     ( errnoToError
         ( Libnng.getopt_int
-            ( unSocket socket )
+            ( socketSocket socket )
             Libnng.oPT_RECVFD
         )
     )
@@ -200,7 +280,7 @@ getSendFd socket =
   coerce
     ( errnoToError
         ( Libnng.getopt_int
-            ( unSocket socket )
+            ( socketSocket socket )
             Libnng.oPT_SENDFD
         )
     )
@@ -217,7 +297,7 @@ openDialer socket address =
         address
         ( \c_address ->
             Libnng.dial
-              ( unSocket socket )
+              ( socketSocket socket )
               c_address
               0
         )
@@ -233,7 +313,7 @@ openDialer_ socket address =
         address
         ( \c_address ->
             Libnng.dial_
-              ( unSocket socket )
+              ( socketSocket socket )
               c_address
               0
         )
@@ -257,7 +337,7 @@ listen socket address =
         address
         ( \c_address ->
             Libnng.listen
-              ( unSocket socket )
+              ( socketSocket socket )
               c_address
               0
         )
@@ -273,7 +353,7 @@ listen_ socket address =
         address
         ( \c_address ->
             Libnng.listen_
-              ( unSocket socket )
+              ( socketSocket socket )
               c_address
               0
         )
@@ -316,7 +396,7 @@ sendByteString socket bytes =
             bytes
             ( \( ptr, len ) ->
                 Libnng.send_unsafe
-                  ( unSocket socket )
+                  ( socketSocket socket )
                   ptr
                   ( fromIntegral len )
                   Libnng.fLAG_NONBLOCK
@@ -375,7 +455,7 @@ recvByteString socket =
       -> IO ( Either CInt () )
     doRecv ptrPtr lenPtr =
       Libnng.recv_unsafe
-        ( unSocket socket )
+        ( socketSocket socket )
         ptrPtr
         lenPtr
         ( Libnng.fLAG_ALLOC .|. Libnng.fLAG_NONBLOCK )
