@@ -7,10 +7,19 @@ module Nng
   , CanSend
   , CanReceive
   , Error(..)
-  , openSocket
+  , openBusSocket
+  , openPairSocket
+  , openPubSocket
+  , openPullSocket
+  , openPushSocket
+  , openRepSocket
+  , openReqSocket
+  , openRespondentSocket
+  , openSubSocket
+  , openSurveyorSocket
   , closeSocket
-  , dial
-  , dial_
+  , openDialer
+  , openDialer_
   , closeDialer
   , listen
   , listen_
@@ -197,6 +206,46 @@ openSocket = \case
         Right socket ->
           Right ( Socket socket )
 
+openBusSocket :: IO ( Either Error ( Socket 'SocketType'Bus ) )
+openBusSocket =
+  openSocket SSocketType'Bus
+
+openPairSocket :: IO ( Either Error ( Socket 'SocketType'Pair ) )
+openPairSocket =
+  openSocket SSocketType'Pair
+
+openPubSocket :: IO ( Either Error ( Socket 'SocketType'Pub ) )
+openPubSocket =
+  openSocket SSocketType'Pub
+
+openPullSocket :: IO ( Either Error ( Socket 'SocketType'Pull ) )
+openPullSocket =
+  openSocket SSocketType'Pull
+
+openPushSocket :: IO ( Either Error ( Socket 'SocketType'Push ) )
+openPushSocket =
+  openSocket SSocketType'Push
+
+openRepSocket :: IO ( Either Error ( Socket 'SocketType'Rep ) )
+openRepSocket =
+  openSocket SSocketType'Rep
+
+openReqSocket :: IO ( Either Error ( Socket 'SocketType'Req ) )
+openReqSocket =
+  openSocket SSocketType'Req
+
+openRespondentSocket :: IO ( Either Error ( Socket 'SocketType'Respondent ) )
+openRespondentSocket =
+  openSocket SSocketType'Respondent
+
+openSubSocket :: IO ( Either Error ( Socket 'SocketType'Sub ) )
+openSubSocket =
+  openSocket SSocketType'Sub
+
+openSurveyorSocket :: IO ( Either Error ( Socket 'SocketType'Surveyor ) )
+openSurveyorSocket =
+  openSocket SSocketType'Surveyor
+
 closeSocket
   :: Socket ty
   -> IO ( Either Error () )
@@ -231,11 +280,11 @@ getSendFd socket =
 
 -- TODO dial flags
 -- TODO dial type safety
-dial
+openDialer
   :: Socket ty
   -> Address
   -> IO ( Either Error Libnng.Dialer )
-dial socket address =
+openDialer socket address =
   errnoToError
     ( addressAsCString
         address
@@ -247,11 +296,11 @@ dial socket address =
         )
     )
 
-dial_
+openDialer_
   :: Socket ty
   -> Address
   -> IO ( Either Error () )
-dial_ socket address =
+openDialer_ socket address =
   errnoToError
     ( addressAsCString
         address

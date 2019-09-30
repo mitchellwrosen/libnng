@@ -62,7 +62,7 @@ module Libnng
   -- , msg_trim
   -- , recvmsg
   -- , sendmsg
-    -- * Message header handling
+    -- ** Message header handling
   -- , msg_header
   -- , msg_header_append
   -- , msg_header_chop
@@ -72,7 +72,7 @@ module Libnng
   -- , msg_header_trim
     -- * Asynchronous operations
   -- , aio_abort
-  -- , aio_alloc
+  , aio_alloc
   -- , aio_begin
   -- , aio_cancel
   -- , aio_count
@@ -146,26 +146,15 @@ import Libnng.Foreign
 import Libnng.Types
 
 
--- aio_alloc
---   :: IO ()
---   -> IO ( Either CInt Aio )
--- aio_alloc callback =
---   alloca \aioPtr -> do
---     callback' <- makeAioCallback (const callback)
---     nng_aio_alloc aioPtr callback' nullPtr >>= \case
---       0 -> do
---         aio :: Ptr () <-
---           peek aioPtr
-
---         pure
---           ( Right Aio
---               { aioHandle = aio
---               , aioFree = freeHaskellFunPtr callback'
---               }
---           )
-
---       n ->
---         pure ( Left n )
+aio_alloc
+  :: FunPtr ( Ptr a -> IO () )
+  -> Ptr a
+  -> IO ( Either CInt Aio )
+aio_alloc callback arg =
+  alloca \aioPtr -> do
+    nng_aio_alloc aioPtr callback arg >>= \case
+      0 -> Right <$> peek aioPtr
+      n -> pure ( Left n )
 
 bus0_open :: IO ( Either CInt Socket )
 bus0_open =
