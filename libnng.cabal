@@ -4,12 +4,33 @@ name: libnng
 version: 0
 
 library
-  build-depends: base, bytestring, text
+  build-depends:
+    base,
+    bytestring,
+    text
+  default-extensions:
+    BlockArguments
+    DataKinds
+    DeriveAnyClass
+    DerivingStrategies
+    GADTs
+    GeneralizedNewtypeDeriving
+    KindSignatures
+    LambdaCase
+    OverloadedStrings
+    ScopedTypeVariables
+    TypeFamilies
+    ViewPatterns
   default-language: Haskell2010
-  exposed-modules: Libnng, Nng
+  exposed-modules:
+    Libnng
+    Nng
   extra-libraries: nng
   ghc-options: -Wall
   hs-source-dirs: src
+  other-modules:
+    Libnng.Foreign
+    Libnng.Types
 
 test-suite tests
   build-depends: base, containers, libnng

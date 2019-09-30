@@ -1,13 +1,6 @@
-{-# LANGUAGE BlockArguments             #-}
-{-# LANGUAGE DerivingStrategies         #-}
-{-# LANGUAGE ForeignFunctionInterface   #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE CPP                        #-}
-
 module Libnng
   ( Aio
+  , Ctx(..)
   , Dialer(..)
   , Listener(..)
   , Socket(..)
@@ -79,7 +72,7 @@ module Libnng
   -- , msg_header_trim
     -- * Asynchronous operations
   -- , aio_abort
-  , aio_alloc
+  -- , aio_alloc
   -- , aio_begin
   -- , aio_cancel
   -- , aio_count
@@ -121,6 +114,12 @@ module Libnng
   -- , wss_register
   -- , zt_register
     -- * Protocol contexts
+  , ctx_close
+  -- , ctx_getopt
+  , ctx_open
+  , ctx_recv
+  , ctx_send
+  -- , ctx_setopt
     -- * Statistics
     -- * URL object
     -- * Supplemental API
@@ -139,54 +138,34 @@ module Libnng
   , oPT_SENDFD
   ) where
 
-import Data.Word (Word32)
 import Foreign hiding (free)
 import Foreign.C
 import System.IO.Unsafe (unsafePerformIO)
 
-
-data Aio
-  = Aio
-  { aioHandle :: Ptr ()
-  , aioFree :: IO () -- Free wrapper funptr
-  }
-
-newtype Dialer
-  = Dialer { dialer_id :: Word32 }
-  deriving stock ( Eq, Show )
-  deriving newtype ( Storable )
-
-newtype Listener
-  = Listener { listener_id :: Word32 }
-  deriving stock ( Eq, Show )
-  deriving newtype ( Storable )
-
-newtype Socket
-  = Socket { socket_id :: Word32 }
-  deriving stock ( Eq, Show )
-  deriving newtype ( Storable )
+import Libnng.Foreign
+import Libnng.Types
 
 
-aio_alloc
-  :: IO ()
-  -> IO ( Either CInt Aio )
-aio_alloc callback =
-  alloca \aioPtr -> do
-    callback' <- makeAioCallback (const callback)
-    nng_aio_alloc aioPtr callback' nullPtr >>= \case
-      0 -> do
-        aio :: Ptr () <-
-          peek aioPtr
+-- aio_alloc
+--   :: IO ()
+--   -> IO ( Either CInt Aio )
+-- aio_alloc callback =
+--   alloca \aioPtr -> do
+--     callback' <- makeAioCallback (const callback)
+--     nng_aio_alloc aioPtr callback' nullPtr >>= \case
+--       0 -> do
+--         aio :: Ptr () <-
+--           peek aioPtr
 
-        pure
-          ( Right Aio
-              { aioHandle = aio
-              , aioFree = freeHaskellFunPtr callback'
-              }
-          )
+--         pure
+--           ( Right Aio
+--               { aioHandle = aio
+--               , aioFree = freeHaskellFunPtr callback'
+--               }
+--           )
 
-      n ->
-        pure ( Left n )
+--       n ->
+--         pure ( Left n )
 
 bus0_open :: IO ( Either CInt Socket )
 bus0_open =
@@ -200,6 +179,35 @@ close
   -> IO ( Either CInt () )
 close socket =
   errnoToEither ( nng_close socket )
+
+ctx_close
+  :: Ctx
+  -> IO ( Either CInt () )
+ctx_close context =
+  errnoToEither ( nng_ctx_close context )
+
+ctx_open
+  :: Socket
+  -> IO ( Either CInt Ctx )
+ctx_open socket =
+  alloca \ctxPtr ->
+    nng_ctx_open ctxPtr socket >>= \case
+      0 -> Right <$> peek ctxPtr
+      n -> pure ( Left n )
+
+ctx_recv
+  :: Ctx
+  -> Aio
+  -> IO ()
+ctx_recv =
+  nng_ctx_recv
+
+ctx_send
+  :: Ctx
+  -> Aio
+  -> IO ()
+ctx_send =
+  nng_ctx_send
 
 dial
   :: Socket
@@ -501,215 +509,3 @@ errnoToEither =
         0 -> Right ()
         n -> Left n
     )
-
-
---------------------------------------------------------------------------------
--- Foreign imports
---------------------------------------------------------------------------------
-
-foreign import ccall unsafe "nng_aio_alloc"
-  nng_aio_alloc
-    :: Ptr ( Ptr () )
-    -> FunPtr ( Ptr a -> IO () )
-    -> Ptr a
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_bus0_open"
-  nng_bus0_open
-    :: Ptr Socket
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_close"
-  nng_close
-    :: Socket
-    -> IO CInt
-
-foreign import ccall safe "static nng_dial"
-  nng_dial
-    :: Socket
-    -> CString
-    -> Ptr Dialer
-    -> CInt
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_dial"
-  nng_dial_unsafe
-    :: Socket
-    -> CString
-    -> Ptr Dialer
-    -> CInt
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_dialer_close"
-  nng_dialer_close
-    :: Dialer
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_dialer_create"
-  nng_dialer_create
-    :: Ptr Dialer
-    -> Socket
-    -> CString
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_dialer_setopt_bool"
-  nng_dialer_setopt_bool
-    :: Dialer
-    -> CString
-    -> Bool
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_dialer_setopt_int"
-  nng_dialer_setopt_int
-    :: Dialer
-    -> CString
-    -> CInt
-    -> IO CInt
-
-foreign import ccall safe "static nng_dialer_start"
-  nng_dialer_start
-    :: Dialer
-    -> CInt
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_dialer_start"
-  nng_dialer_start_unsafe
-    :: Dialer
-    -> CInt
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_free"
-  nng_free
-    :: Ptr a
-    -> CSize
-    -> IO ()
-
-foreign import ccall unsafe "static nng_getopt_int"
-  nng_getopt_int
-    :: Socket
-    -> CString
-    -> Ptr CInt
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_listen"
-  nng_listen
-    :: Socket
-    -> CString
-    -> Ptr Listener
-    -> CInt
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_listener_close"
-  nng_listener_close
-    :: Listener
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_listener_create"
-  nng_listener_create
-    :: Ptr Listener
-    -> Socket
-    -> CString
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_listener_start"
-  nng_listener_start
-    :: Listener
-    -> CInt
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_pair0_open"
-  nng_pair0_open
-    :: Ptr Socket
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_pair1_open"
-  nng_pair1_open
-    :: Ptr Socket
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_pub0_open"
-  nng_pub0_open
-    :: Ptr Socket
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_pull0_open"
-  nng_pull0_open
-    :: Ptr Socket
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_push0_open"
-  nng_push0_open
-    :: Ptr Socket
-    -> IO CInt
-
-foreign import ccall safe "static nng_recv"
-  nng_recv
-    :: Socket
-    -> Ptr a
-    -> Ptr CSize
-    -> CInt
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_recv"
-  nng_recv_unsafe
-    :: Socket
-    -> Ptr a
-    -> Ptr CSize
-    -> CInt
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_rep0_open"
-  nng_rep0_open
-    :: Ptr Socket
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_req0_open"
-  nng_req0_open
-    :: Ptr Socket
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_respondent0_open"
-  nng_respondent0_open
-    :: Ptr Socket
-    -> IO CInt
-
-foreign import ccall safe "static nng_send"
-  nng_send
-    :: Socket
-    -> Ptr a
-    -> CSize
-    -> CInt
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_send"
-  nng_send_unsafe
-    :: Socket
-    -> Ptr a
-    -> CSize
-    -> CInt
-    -> IO CInt
-
-foreign import ccall "static nng_strerror"
-  nng_strerror
-    :: CInt
-    -> CString
-
-foreign import ccall unsafe "static nng_sub0_open"
-  nng_sub0_open
-    :: Ptr Socket
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_surveyor0_open"
-  nng_surveyor0_open
-    :: Ptr Socket
-    -> IO CInt
-
-foreign import ccall unsafe "static nng_version"
-  nng_version
-    :: CString
-
-
-foreign import ccall "wrapper"
-  makeAioCallback
-    :: ( Ptr a -> IO () )
-    -> IO ( FunPtr ( Ptr a -> IO () ) )
