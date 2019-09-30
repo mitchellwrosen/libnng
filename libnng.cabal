@@ -31,6 +31,8 @@ library
   other-modules:
     Libnng.Foreign
     Libnng.Types
+    Nng.Address
+    Nng.Error
 
 test-suite tests
   build-depends:
