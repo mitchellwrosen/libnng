@@ -1,9 +1,8 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 module Nng
-  ( IsSocket(..)
-  , ReqSocket
-  , Socket
+  ( ReqSocket
+  , Socket(..)
   , SocketType(..)
   , SSocketType(..)
   , CanSend
@@ -20,19 +19,16 @@ module Nng
   , openSurveyorSocket
   , openDialer
   , openDialer_
-  , closeDialer
+  , Nng.Socket.Internal.closeDialer
   , openListener
   , openListener_
-  , closeListener
-  , sendByteString
-  , recvByteString
+  , Nng.Socket.Internal.closeListener
     -- * Socket address
   , Address(..)
   , addressFromText
   , addressToText
   ) where
 
-import Data.ByteString (ByteString)
 import Data.Functor ((<&>))
 import Data.Kind (Constraint, Type)
 import GHC.TypeLits (TypeError)
@@ -40,9 +36,10 @@ import qualified GHC.TypeLits as TypeError (ErrorMessage(..))
 
 import Nng.Address
 import Nng.Error
-import Nng.Socket.Internal
+import Nng.Prelude
 import Nng.Socket.Req (ReqSocket)
 import qualified Libnng
+import qualified Nng.Socket.Internal
 
 
 data Socket ( ty :: SocketType )
@@ -231,19 +228,30 @@ openSurveyorSocket =
         , socketX = ()
         }
 
--- TODO sendByteString flags
-sendByteString
-  :: CanSend ty
-  => Socket ty
-  -> ByteString
-  -> IO ( Either Error () )
-sendByteString socket =
-  sendByteString_ ( socketSocket socket )
+openDialer
+  :: Socket ty
+  -> Address
+  -> IO ( Either Error Libnng.Dialer )
+openDialer =
+  socketSocket >>> Nng.Socket.Internal.internalOpenDialer
 
--- TODO recvByteString async exception safety
-recvByteString
-  :: CanReceive ty
-  => Socket ty
-  -> IO ( Either Error ByteString )
-recvByteString socket =
-  recvByteString_ ( socketSocket socket )
+openDialer_
+  :: Socket ty
+  -> Address
+  -> IO ( Either Error () )
+openDialer_ =
+  socketSocket >>> Nng.Socket.Internal.internalOpenDialer_
+
+openListener
+  :: Socket ty
+  -> Address
+  -> IO ( Either Error Libnng.Listener )
+openListener =
+  socketSocket >>> Nng.Socket.Internal.internalOpenListener
+
+openListener_
+  :: Socket ty
+  -> Address
+  -> IO ( Either Error () )
+openListener_ =
+  socketSocket >>> Nng.Socket.Internal.internalOpenListener_

@@ -1,13 +1,15 @@
 module Nng.Socket.Internal
   ( IsSocket(..)
-  , openDialer
-  , openDialer_
   , closeDialer
-  , openListener
-  , openListener_
   , closeListener
-  , sendByteString_
-  , recvByteString_
+  , internalOpenDialer
+  , internalOpenDialer_
+  , internalOpenListener
+  , internalOpenListener_
+  , internalSendByteString
+  , Fix(..)
+  , RecvF(..)
+  , internalRecvByteString
   ) where
 
 import Data.Bits ((.|.))
@@ -25,6 +27,26 @@ import qualified Libnng
 class IsSocket socket where
   close
     :: socket
+    -> IO ( Either Error () )
+
+  openDialer
+    :: socket
+    -> Address
+    -> IO ( Either Error Libnng.Dialer )
+
+  openDialer_
+    :: socket
+    -> Address
+    -> IO ( Either Error () )
+
+  openListener
+    :: socket
+    -> Address
+    -> IO ( Either Error Libnng.Listener )
+
+  openListener_
+    :: socket
+    -> Address
     -> IO ( Either Error () )
 
 getRecvFd
@@ -53,11 +75,11 @@ getSendFd socket =
 
 -- TODO dial flags
 -- TODO dial type safety
-openDialer
+internalOpenDialer
   :: Libnng.Socket
   -> Address
   -> IO ( Either Error Libnng.Dialer )
-openDialer socket address =
+internalOpenDialer socket address =
   errnoToError
     ( addressAsCString
         address
@@ -69,11 +91,11 @@ openDialer socket address =
         )
     )
 
-openDialer_
+internalOpenDialer_
   :: Libnng.Socket
   -> Address
   -> IO ( Either Error () )
-openDialer_ socket address =
+internalOpenDialer_ socket address =
   errnoToError
     ( addressAsCString
         address
@@ -93,11 +115,11 @@ closeDialer dialer =
 
 -- TODO listen flags
 -- TODO listen type safety
-openListener
+internalOpenListener
   :: Libnng.Socket
   -> Address
   -> IO ( Either Error Libnng.Listener )
-openListener socket address =
+internalOpenListener socket address =
   errnoToError
     ( addressAsCString
         address
@@ -109,11 +131,11 @@ openListener socket address =
         )
     )
 
-openListener_
+internalOpenListener_
   :: Libnng.Socket
   -> Address
   -> IO ( Either Error () )
-openListener_ socket address =
+internalOpenListener_ socket address =
   errnoToError
     ( addressAsCString
         address
@@ -131,11 +153,12 @@ closeListener
 closeListener listener =
   errnoToError ( Libnng.listener_close listener )
 
-sendByteString_
+-- TODO sendByteString_ flags
+internalSendByteString
   :: Libnng.Socket
   -> ByteString
   -> IO ( Either Error () )
-sendByteString_ socket bytes =
+internalSendByteString socket bytes =
   loop >>= \case
     Left Error'TryAgain ->
       getSendFd socket >>= \case
@@ -167,29 +190,51 @@ sendByteString_ socket bytes =
             )
         )
 
-recvByteString_
+newtype Fix f
+  = Fix { unFix :: f ( Fix f ) }
+
+data RecvF a
+  = RecvF'Error Error
+  | RecvF'Again ( STM () ) ( IO () ) ( IO a )
+  | RecvF'Ok ByteString
+
+-- TODO recvByteString_ async exception safety
+internalRecvByteString
   :: Libnng.Socket
-  -> IO ( Either Error ByteString )
-recvByteString_ socket =
-  loop >>= \case
-    Left Error'TryAgain ->
-      getRecvFd socket >>= \case
-        Left err ->
-          pure ( Left err )
-
-        Right recvFd -> do
-          threadWaitRead recvFd
-          loop
-
-    Left err ->
-      pure ( Left err )
-
-    Right bytes ->
-      pure ( Right bytes )
+  -> IO ( Fix RecvF )
+internalRecvByteString socket =
+  loop
 
   where
-    loop :: IO ( Either Error ByteString )
+    loop :: IO ( Fix RecvF )
     loop =
+      attempt >>= \case
+        Left Error'TryAgain ->
+          getRecvFd socket >>= \case
+            Left err ->
+              pure ( Fix ( RecvF'Error err ) )
+
+            Right recvFd -> do
+              ( ready, uninterested ) <-
+                threadWaitReadSTM recvFd
+
+              pure
+                ( Fix
+                    ( RecvF'Again
+                        ready
+                        uninterested
+                        loop
+                    )
+                )
+
+        Left err ->
+          pure ( Fix ( RecvF'Error err ) )
+
+        Right bytes ->
+          pure ( Fix ( RecvF'Ok bytes ) )
+
+    attempt :: IO ( Either Error ByteString )
+    attempt =
       errnoToError
         ( alloca \ptrPtr ->
             alloca \lenPtr ->

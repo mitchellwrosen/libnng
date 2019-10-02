@@ -5,11 +5,12 @@ module Nng.Address
   , addressToText
   ) where
 
-import Data.Text (Text)
-import Foreign.C.String (CString)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.ByteString as ByteString
+
+import Nng.Prelude
+
 
 -- TODO Address more protocols
 data Address

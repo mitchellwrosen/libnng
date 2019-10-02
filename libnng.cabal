@@ -19,7 +19,6 @@ library
     KindSignatures
     LambdaCase
     OverloadedStrings
-    NoImplicitPrelude
     ScopedTypeVariables
     TypeFamilies
     ViewPatterns
