@@ -2,6 +2,9 @@ module Nng.Socket.Req
   ( ReqSocket
   , open
   , sendByteString
+  , Request
+  , makeRequest
+  , updateRequest
   ) where
 
 import Nng.Error
@@ -12,16 +15,32 @@ import qualified Libnng
 
 data ReqSocket
   = ReqSocket
-  { reqSocketRequestVar :: TMVar Request
-  , reqSocketSocket :: Libnng.Socket
+  { reqSocketSocket :: Libnng.Socket
   , reqSocketThread :: ThreadId
+  , reqSocketVarsVar :: TMVar ( Vars ByteString )
   }
 
-data Request
-  = Request
-  { requestRequestVar :: TMVar ByteString -- full when request is made
-  , requestResponseVar :: TMVar ( Either Error ByteString )
-  }
+data Vars a
+  = Vars
+      ( TMVar a ) -- requests come in
+      ( TMVar ( Either Error a ) ) -- responses go out
+
+newtype Request a
+  = Request ( TMVar a )
+
+makeRequest
+  :: a
+  -> IO ( Request a )
+makeRequest x =
+  coerce ( newTMVarIO x )
+
+updateRequest
+  :: Request a
+  -> a
+  -> STM ()
+updateRequest ( Request var ) x = do
+  void ( tryTakeTMVar var )
+  putTMVar var x
 
 instance IsSocket ReqSocket where
   close = closeImpl
@@ -50,35 +69,33 @@ open =
       pure ( Left ( cintToError err ) )
 
     Right socket -> do
-      requestVar :: TMVar Request <-
+      varsVar :: TMVar ( Vars ByteString ) <-
         newEmptyTMVarIO
 
       managerThreadId :: ThreadId <-
-        forkIO ( unsafeUnmask ( managerThread socket requestVar ) )
+        forkIO ( unsafeUnmask ( managerThread socket varsVar ) )
 
       pure
         ( Right ReqSocket
-            { reqSocketRequestVar = requestVar
-            , reqSocketSocket = socket
+            { reqSocketSocket = socket
             , reqSocketThread = managerThreadId
+            , reqSocketVarsVar = varsVar
             }
         )
 
 managerThread
   :: Libnng.Socket
-  -> TMVar Request
+  -> TMVar ( Vars ByteString )
   -> IO ()
-managerThread socket requestVar =
+managerThread socket varsVar =
   forever do
-    request :: Request <-
-      atomically ( takeTMVar requestVar )
+    Vars requestVar responseVar <-
+      atomically ( takeTMVar varsVar )
 
     response :: Either Error ByteString <-
-      handleRequest
-        socket
-        ( takeTMVar ( requestRequestVar request ) )
+      handleRequest socket ( takeTMVar requestVar )
 
-    atomically ( putTMVar ( requestResponseVar request ) response )
+    atomically ( putTMVar responseVar response )
 
 -- Send request
 --   Error   => Return
@@ -144,23 +161,18 @@ handleRequest socket takeRequest =
 -- Send
 --------------------------------------------------------------------------------
 
--- TODO more type safe interface to making requests (that TMVar could be empty)
 sendByteString
   :: ReqSocket
-  -> TMVar ByteString
+  -> Request ByteString
   -> IO ( STM ( Either Error ByteString ) )
-sendByteString socket requestVar = do
+sendByteString socket ( Request requestVar ) = do
   responseVar :: TMVar ( Either Error ByteString ) <-
     newEmptyTMVarIO
 
   atomically
     ( putTMVar
-        ( reqSocketRequestVar socket )
-        ( Request
-            { requestRequestVar = requestVar
-            , requestResponseVar = responseVar
-            }
-        )
+        ( reqSocketVarsVar socket )
+        ( Vars requestVar responseVar )
     )
 
   pure ( takeTMVar responseVar )

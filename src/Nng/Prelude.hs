@@ -7,7 +7,7 @@ import Control.Category as X ((>>>))
 import Control.Concurrent as X (ThreadId, killThread, forkIO)
 import Control.Concurrent.STM as X
 import Control.Exception as X (Exception)
-import Control.Monad as X (forever, join)
+import Control.Monad as X (forever, join, void)
 import Data.ByteString as X (ByteString)
 import Data.Coerce as X (coerce)
 import Data.Functor as X ((<&>))
