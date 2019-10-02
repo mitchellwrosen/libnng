@@ -7,6 +7,7 @@ library
   build-depends:
     base,
     bytestring,
+    stm,
     text
   default-extensions:
     BlockArguments

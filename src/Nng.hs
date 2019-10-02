@@ -21,8 +21,8 @@ module Nng
   , openDialer
   , openDialer_
   , closeDialer
-  , listen
-  , listen_
+  , openListener
+  , openListener_
   , closeListener
   , sendByteString
   , recvByteString
@@ -32,6 +32,9 @@ module Nng
   , addressToText
   ) where
 
+import Control.Concurrent (ThreadId, forkIO)
+import Control.Concurrent.STM
+import Control.Monad (forever)
 import Data.ByteString (ByteString)
 import Data.Coerce (coerce)
 import Data.Functor ((<&>))
@@ -39,6 +42,7 @@ import Data.Kind (Constraint, Type)
 import Foreign
 import Foreign.C
 import GHC.Conc (threadWaitRead)
+import GHC.IO (unsafeUnmask)
 import GHC.TypeLits (TypeError)
 import System.Posix.Types
 import qualified Data.ByteString.Unsafe as ByteString
@@ -87,7 +91,13 @@ type family SocketX ( ty :: SocketType ) :: Type where
   SocketX 'SocketType'Pull = ()
   SocketX 'SocketType'Push = ()
   SocketX 'SocketType'Rep = ()
-  SocketX 'SocketType'Req = ()
+  SocketX 'SocketType'Req =
+    ( ThreadId
+    , TMVar
+        ( ByteString
+        , TMVar ( Either Error ByteString )
+        )
+    )
   SocketX 'SocketType'Respondent = ()
   SocketX 'SocketType'Sub = ()
   SocketX 'SocketType'Surveyor = ()
@@ -203,16 +213,40 @@ openRepSocket =
 
 openReqSocket :: IO ( Either Error ( Socket 'SocketType'Req ) )
 openReqSocket =
-  Libnng.req0_open <&> \case
+  Libnng.req0_open >>= \case
     Left err ->
-      Left ( cintToError err )
+      pure ( Left ( cintToError err ) )
 
-    Right socket ->
-      Right Socket
-        { socketSocket = socket
-        , socketType = SSocketType'Req
-        , socketX = ()
-        }
+    Right socket -> do
+      requestVar :: TMVar ( ByteString, TMVar ( Either Error ByteString ) ) <-
+        newEmptyTMVarIO
+
+      managerThread :: ThreadId <-
+        forkIO do
+          unsafeUnmask do
+            forever do
+              ( request, responseVar ) <-
+                atomically ( readTMVar requestVar )
+
+              sendByteString_ socket request >>= \case
+                Left err ->
+                  atomically ( putTMVar responseVar ( Left err ) )
+
+                Right () ->
+                  recvByteString_ socket >>= \case
+                    Left err ->
+                      atomically ( putTMVar responseVar ( Left err ) )
+
+                    Right response ->
+                      atomically ( putTMVar responseVar ( Right response ) )
+
+      pure
+        ( Right Socket
+            { socketSocket = socket
+            , socketType = SSocketType'Req
+            , socketX = ( managerThread, requestVar )
+            }
+        )
 
 openRespondentSocket :: IO ( Either Error ( Socket 'SocketType'Respondent ) )
 openRespondentSocket =
@@ -253,6 +287,7 @@ openSurveyorSocket =
         , socketX = ()
         }
 
+-- TODO kill req socket manager thread
 closeSocket
   :: Socket ty
   -> IO ( Either Error () )
@@ -260,27 +295,25 @@ closeSocket socket =
   errnoToError ( Libnng.close ( socketSocket socket ) )
 
 getRecvFd
-  :: CanReceive ty
-  => Socket ty
+  :: Libnng.Socket
   -> IO ( Either Error Fd )
 getRecvFd socket =
   coerce
     ( errnoToError
         ( Libnng.getopt_int
-            ( socketSocket socket )
+            socket
             Libnng.oPT_RECVFD
         )
     )
 
 getSendFd
-  :: CanSend ty
-  => Socket ty
+  :: Libnng.Socket
   -> IO ( Either Error Fd )
 getSendFd socket =
   coerce
     ( errnoToError
         ( Libnng.getopt_int
-            ( socketSocket socket )
+            socket
             Libnng.oPT_SENDFD
         )
     )
@@ -327,11 +360,11 @@ closeDialer dialer =
 
 -- TODO listen flags
 -- TODO listen type safety
-listen
+openListener
   :: Socket ty
   -> Address
   -> IO ( Either Error Libnng.Listener )
-listen socket address =
+openListener socket address =
   errnoToError
     ( addressAsCString
         address
@@ -343,11 +376,11 @@ listen socket address =
         )
     )
 
-listen_
+openListener_
   :: Socket ty
   -> Address
   -> IO ( Either Error () )
-listen_ socket address =
+openListener_ socket address =
   errnoToError
     ( addressAsCString
         address
@@ -371,7 +404,14 @@ sendByteString
   => Socket ty
   -> ByteString
   -> IO ( Either Error () )
-sendByteString socket bytes =
+sendByteString socket =
+  sendByteString_ ( socketSocket socket )
+
+sendByteString_
+  :: Libnng.Socket
+  -> ByteString
+  -> IO ( Either Error () )
+sendByteString_ socket bytes =
   loop >>= \case
     Left Error'TryAgain ->
       getSendFd socket >>= \case
@@ -396,7 +436,7 @@ sendByteString socket bytes =
             bytes
             ( \( ptr, len ) ->
                 Libnng.send_unsafe
-                  ( socketSocket socket )
+                  socket
                   ptr
                   ( fromIntegral len )
                   Libnng.fLAG_NONBLOCK
@@ -409,6 +449,12 @@ recvByteString
   => Socket ty
   -> IO ( Either Error ByteString )
 recvByteString socket =
+  recvByteString_ ( socketSocket socket )
+
+recvByteString_
+  :: Libnng.Socket
+  -> IO ( Either Error ByteString )
+recvByteString_ socket =
   loop >>= \case
     Left Error'TryAgain ->
       getRecvFd socket >>= \case
@@ -455,7 +501,7 @@ recvByteString socket =
       -> IO ( Either CInt () )
     doRecv ptrPtr lenPtr =
       Libnng.recv_unsafe
-        ( socketSocket socket )
+        socket
         ptrPtr
         lenPtr
         ( Libnng.fLAG_ALLOC .|. Libnng.fLAG_NONBLOCK )
