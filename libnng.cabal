@@ -19,6 +19,7 @@ library
     KindSignatures
     LambdaCase
     OverloadedStrings
+    NoImplicitPrelude
     ScopedTypeVariables
     TypeFamilies
     ViewPatterns
@@ -26,6 +27,7 @@ library
   exposed-modules:
     Libnng
     Nng
+    Nng.Socket.Req
   extra-libraries: nng
   ghc-options: -Wall
   hs-source-dirs: src
@@ -34,6 +36,7 @@ library
     Libnng.Types
     Nng.Address
     Nng.Error
+    Nng.Prelude
 
 test-suite tests
   build-depends:

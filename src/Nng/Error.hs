@@ -1,10 +1,11 @@
 module Nng.Error
   ( Error(..)
   , cintToError
+  , errnoToError
   ) where
 
-import Control.Exception (Exception)
-import Foreign.C.Types (CInt)
+import Nng.Prelude
+
 
 data Error
   = Error'Interrupted
@@ -76,3 +77,15 @@ cintToError = \case
   30 -> Error'IncorrectType
   n  -> error ( "cintToError: " ++ show n )
 
+errnoToError
+  :: IO ( Either CInt a )
+  -> IO ( Either Error a )
+errnoToError =
+  fmap
+    ( \case
+        Left err ->
+          Left ( cintToError err )
+
+        Right x ->
+          Right x
+    )
