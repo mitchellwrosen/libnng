@@ -1,7 +1,7 @@
 module Nng.Socket.Req
   ( ReqSocket
   , open
-  , sendByteString
+  , send
   , Request
   , makeRequest
   , updateRequest
@@ -17,26 +17,26 @@ data ReqSocket
   = ReqSocket
   { reqSocketSocket :: Libnng.Socket
   , reqSocketThread :: ThreadId
-  , reqSocketVarsVar :: TMVar ( Vars ByteString )
+  , reqSocketVarsVar :: TMVar Vars
   }
 
-data Vars a
+data Vars
   = Vars
-      ( TMVar a ) -- requests come in
-      ( TMVar ( Either Error a ) ) -- responses go out
+      ( TMVar ByteString ) -- requests come in
+      ( TMVar ( Either Error ByteString ) ) -- responses go out
 
-newtype Request a
-  = Request ( TMVar a )
+newtype Request
+  = Request ( TMVar ByteString )
 
 makeRequest
-  :: a
-  -> IO ( Request a )
+  :: ByteString
+  -> IO Request
 makeRequest x =
   coerce ( newTMVarIO x )
 
 updateRequest
-  :: Request a
-  -> a
+  :: Request
+  -> ByteString
   -> STM ()
 updateRequest ( Request var ) x = do
   void ( tryTakeTMVar var )
@@ -69,7 +69,7 @@ open =
       pure ( Left ( cintToError err ) )
 
     Right socket -> do
-      varsVar :: TMVar ( Vars ByteString ) <-
+      varsVar :: TMVar Vars <-
         newEmptyTMVarIO
 
       managerThreadId :: ThreadId <-
@@ -85,7 +85,7 @@ open =
 
 managerThread
   :: Libnng.Socket
-  -> TMVar ( Vars ByteString )
+  -> TMVar Vars
   -> IO ()
 managerThread socket varsVar =
   forever do
@@ -97,16 +97,18 @@ managerThread socket varsVar =
 
     atomically ( putTMVar responseVar response )
 
--- Send request
---   Error   => Return
---   Success => 3
--- Receive response
---   Error            => Return
---   Success          => Return
---   Socket not ready =>
--- 4 Wait
---     Take request => 2
---     Ready        => 3
+-- [Send request]
+--   Error            => [Return Error]
+--   Success          => [Wait for response]
+--
+-- [Wait for response]
+--   Error            => [Return Error]
+--   Success          => [Return Success]
+--   Socket not ready => [Standby]
+--
+-- [Standby]
+--   New request      => [Send request]
+--   Socket ready     => [Wait for response]
 handleRequest
   :: Libnng.Socket
   -> STM ByteString
@@ -161,11 +163,11 @@ handleRequest socket takeRequest =
 -- Send
 --------------------------------------------------------------------------------
 
-sendByteString
+send
   :: ReqSocket
-  -> Request ByteString
+  -> Request
   -> IO ( STM ( Either Error ByteString ) )
-sendByteString socket ( Request requestVar ) = do
+send socket ( Request requestVar ) = do
   responseVar :: TMVar ( Either Error ByteString ) <-
     newEmptyTMVarIO
 
