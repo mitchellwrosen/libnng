@@ -2,9 +2,6 @@ module Nng.Socket.Req
   ( ReqSocket
   , open
   , send
-  , Request
-  , makeRequest
-  , updateRequest
   ) where
 
 import Nng.Error
@@ -48,43 +45,6 @@ data Vars
       ( TMVar () )
       -- Response var: client reads from this TMVar, this socket writes to it.
       ( TMVar ( Either Error ByteString ) )
-
-data Request
-  = Request
-      ( TMVar ByteString )
-      ( TMVar () )
-
-makeRequest
-  :: ByteString
-  -> IO Request
-makeRequest request =
-  Request
-    <$> newTMVarIO request
-    <*> newEmptyTMVarIO
-
--- | Attempt to update an outstanding request. Returns an @STM@ action that,
--- if it returns, indicates the socket will send the new request.
---
--- The action should typically be raced with the inner @STM@ action returned by
--- 'send'. If the former wins, it means the new request will be sent, and the
--- reply will correspond to the new request. If the latter wins, it means we
--- already received a reply to an outstanding request before updating it, and
--- subsequent calls to 'updateRequest' will now throw
--- 'Control.Exception.BlockedIndefinitelyOnSTM'.
-updateRequest
-  :: Request
-  -> ByteString
-  -> IO ( STM () )
-updateRequest ( Request requestVar requestAcceptedVar ) request = do
-  -- First, overwrite our old request.
-  atomically do
-    void ( tryTakeTMVar requestVar )
-    putTMVar requestVar request
-
-  -- But block until we're sure the socket has actually "accepted" our new
-  -- request to send.
-  pure ( takeTMVar requestAcceptedVar )
-
 
 instance IsSocket ReqSocket where
   close = closeImpl
@@ -214,19 +174,81 @@ handleRequest socket takeRequest requestAccepted =
 
 -- | Send a request on a @req@ socket and receive its reply.
 --
--- Sending occurs in two phases, both of which are @STM@ actions that can be
+-- Sending occurs in two steps, both of which are @STM@ actions that can be
 -- canceled (as by e.g. 'Control.Concurrent.STM.TVar.registerDelay').
 --
--- The first phase is /send/, which blocks if the socket is currently being used
+-- The first step is /send/, which blocks if the socket is currently being used
 -- by another thread.
 --
--- The second phase is /receive/, which blocks until the latest request sent is
--- replied to.
+-- When it succeeds, it returns an /update/ action and a /receive/ action.
+--
+-- The /receive/ action blocks until a response to the latest request sent is
+-- received from a @rep@ socket.
+--
+-- The /update/ action attempts to discard the latest request and send a new
+-- one. However, a response to an outstanding request may arrive concurrently.
+-- For this reason, the update action returns an @STM@ action that, if
+-- successful, indicates the socket will send the new request, and any responses
+-- to old requests will be discarded (by @nng@).
+--
+-- This @STM@ action should typically be raced against the receive action,
+-- because if the receive action returns, then the update action alone will
+-- throw 'Control.Exception.BlockedIndefinitelyOnSTM' (which is to say, if a
+-- full request-response cycle has completed, the socket will /not/ accept an
+-- update to an outstanding request, because there is none).
+--
+-- A common way to use 'send' may be to perform the full exchange to completion,
+-- not updating the initial request after it's sent, and not bothering to time
+-- out or utilize @STM@ in other ways during either the send or receive steps.
+-- You may wish to define a helper function for this simple alternative:
+--
+-- @
+-- simpleSend
+--   :: 'ReqSocket'
+--   -> ByteString
+--   -> IO ( Either 'Error' ByteString )
+-- simpleSend socket request = do
+--   await1 <- 'send' socket request
+--   ( _update, await2 ) <- atomically await1
+--   atomically await2
+-- @
+--
+-- Below is an example of using the update action properly. We send one request,
+-- sleep for 5 seconds, then attempt update the request, which would succeed
+-- only if we hadn't already received a response.
+--
+-- @
+-- await1 <- 'send' socket request1
+-- ( update, await2 ) <- atomically await1
+--
+-- threadDelay 5000000
+--
+-- success <- 'update' request2
+-- atomically ( Left <$> success <|> Right <$> await2 ) >>= \\case
+--   -- Request was updated, now await its response
+--   Left () ->
+--     atomically await2
+--
+--   -- Already received a response to the first request
+--   Right result ->
+--     pure result
+-- @
 send
   :: ReqSocket
-  -> Request
-  -> IO ( STM ( STM ( Either Error ByteString ) ) )
-send socket ( Request requestVar requestAcceptedVar ) = do
+  -> ByteString
+  -> IO
+       ( STM
+           ( ByteString -> IO ( STM () )
+           , STM ( Either Error ByteString )
+           )
+       )
+send socket request = do
+  requestVar :: TMVar ByteString <-
+    newTMVarIO request
+
+  requestAcceptedVar <-
+    newEmptyTMVarIO
+
   responseVar :: TMVar ( Either Error ByteString ) <-
     newEmptyTMVarIO
 
@@ -234,4 +256,15 @@ send socket ( Request requestVar requestAcceptedVar ) = do
     putTMVar
       ( reqSocketVarsVar socket )
       ( Vars requestVar requestAcceptedVar responseVar )
-    pure ( takeTMVar responseVar )
+    pure
+      ( \newRequest -> do
+          -- First, overwrite our old request.
+          atomically do
+            void ( tryTakeTMVar requestVar )
+            putTMVar requestVar newRequest
+
+          -- But block until we're sure the socket has actually "accepted" our
+          -- new request to send.
+          pure ( takeTMVar requestAcceptedVar )
+      , takeTMVar responseVar
+      )
