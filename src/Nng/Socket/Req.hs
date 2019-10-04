@@ -22,25 +22,69 @@ data ReqSocket
 
 data Vars
   = Vars
-      ( TMVar ByteString ) -- requests come in
-      ( TMVar ( Either Error ByteString ) ) -- responses go out
+      -- Request var: client writes to this TMVar (usually only once), and this
+      -- socket reads from it.
+      --
+      -- The client may put to the TMVar again, which means "ignore my previous
+      -- one, send this one instead", and the reply to the original request (if
+      -- received) will be tossed (by nng).
+      ( TMVar ByteString )
+      -- "Request accepted" var: clients read from this TMVar after writing a
+      -- *new* request, and we write to it if we accept their new request to
+      -- send.
+      --
+      -- This is necessary because the client needs to know which of its
+      -- requests it eventually receives a response to. Without this
+      -- back-and-forth between client and this socket, the following might
+      -- occur:
+      --
+      --   1. Client puts request #1 to request TMVar
+      --   2. Socket sends it and receives response #1
+      --   3. Client times out waiting on response TMVar, and puts request #2
+      --      to request TMVar
+      --   4. Socket puts response #1 to response TMVar
+      --   5. Client reads response #1 from response TMVar, even though it
+      --      (seemigly) already enqueued request #2 instead.
+      ( TMVar () )
+      -- Response var: client reads from this TMVar, this socket writes to it.
+      ( TMVar ( Either Error ByteString ) )
 
-newtype Request
-  = Request ( TMVar ByteString )
+data Request
+  = Request
+      ( TMVar ByteString )
+      ( TMVar () )
 
 makeRequest
   :: ByteString
   -> IO Request
-makeRequest x =
-  coerce ( newTMVarIO x )
+makeRequest request =
+  Request
+    <$> newTMVarIO request
+    <*> newEmptyTMVarIO
 
+-- | Attempt to update an outstanding request. Returns an @STM@ action that,
+-- if it returns, indicates the socket will send the new request.
+--
+-- The action should typically be raced with the inner @STM@ action returned by
+-- 'send'. If the former wins, it means the new request will be sent, and the
+-- reply will correspond to the new request. If the latter wins, it means we
+-- already received a reply to an outstanding request before updating it, and
+-- subsequent calls to 'updateRequest' will now throw
+-- 'Control.Exception.BlockedIndefinitelyOnSTM'.
 updateRequest
   :: Request
   -> ByteString
-  -> STM ()
-updateRequest ( Request var ) x = do
-  void ( tryTakeTMVar var )
-  putTMVar var x
+  -> IO ( STM () )
+updateRequest ( Request requestVar requestAcceptedVar ) request = do
+  -- First, overwrite our old request.
+  atomically do
+    void ( tryTakeTMVar requestVar )
+    putTMVar requestVar request
+
+  -- But block until we're sure the socket has actually "accepted" our new
+  -- request to send.
+  pure ( takeTMVar requestAcceptedVar )
+
 
 instance IsSocket ReqSocket where
   close = closeImpl
@@ -89,11 +133,14 @@ managerThread
   -> IO ()
 managerThread socket varsVar =
   forever do
-    Vars requestVar responseVar <-
+    Vars requestVar requestAcceptedVar responseVar <-
       atomically ( takeTMVar varsVar )
 
     response :: Either Error ByteString <-
-      handleRequest socket ( takeTMVar requestVar )
+      handleRequest
+        socket
+        ( takeTMVar requestVar )
+        ( atomically ( putTMVar requestAcceptedVar () ) )
 
     atomically ( putTMVar responseVar response )
 
@@ -112,8 +159,9 @@ managerThread socket varsVar =
 handleRequest
   :: Libnng.Socket
   -> STM ByteString
+  -> IO ()
   -> IO ( Either Error ByteString )
-handleRequest socket takeRequest =
+handleRequest socket takeRequest requestAccepted =
   atomically takeRequest >>= exchange
 
   where
@@ -153,6 +201,7 @@ handleRequest socket takeRequest =
 
               pure do
                 uninterested
+                requestAccepted
                 exchange newRequest
 
           in
@@ -163,18 +212,26 @@ handleRequest socket takeRequest =
 -- Send
 --------------------------------------------------------------------------------
 
+-- | Send a request on a @req@ socket and receive its reply.
+--
+-- Sending occurs in two phases, both of which are @STM@ actions that can be
+-- canceled (as by e.g. 'Control.Concurrent.STM.TVar.registerDelay').
+--
+-- The first phase is /send/, which blocks if the socket is currently being used
+-- by another thread.
+--
+-- The second phase is /receive/, which blocks until the latest request sent is
+-- replied to.
 send
   :: ReqSocket
   -> Request
-  -> IO ( STM ( Either Error ByteString ) )
-send socket ( Request requestVar ) = do
+  -> IO ( STM ( STM ( Either Error ByteString ) ) )
+send socket ( Request requestVar requestAcceptedVar ) = do
   responseVar :: TMVar ( Either Error ByteString ) <-
     newEmptyTMVarIO
 
-  atomically
-    ( putTMVar
-        ( reqSocketVarsVar socket )
-        ( Vars requestVar responseVar )
-    )
-
-  pure ( takeTMVar responseVar )
+  pure do
+    putTMVar
+      ( reqSocketVarsVar socket )
+      ( Vars requestVar requestAcceptedVar responseVar )
+    pure ( takeTMVar responseVar )
