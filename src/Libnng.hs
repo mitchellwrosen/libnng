@@ -255,7 +255,7 @@ dialer_create socket url =
 dialer_setopt_bool
   :: Dialer
   -> CString
-  -> Bool
+  -> CBool
   -> IO ( Either CInt () )
 dialer_setopt_bool dialer opt val =
   errnoToEither ( nng_dialer_setopt_bool dialer opt val )

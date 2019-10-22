@@ -2,13 +2,12 @@ module Nng.Socket.Internal
   ( IsSocket(..)
   , closeDialer
   , closeListener
+  , internalClose
   , internalOpenDialer
   , internalOpenDialer_
   , internalOpenListener
   , internalOpenListener_
   , internalSendByteString
-  , Fix(..)
-  , RecvF(..)
   , internalRecvByteString
   ) where
 
@@ -72,6 +71,12 @@ getSendFd socket =
             Libnng.oPT_SENDFD
         )
     )
+
+internalClose
+  :: Libnng.Socket
+  -> IO ( Either Error () )
+internalClose socket =
+  errnoToError ( Libnng.close socket )
 
 -- TODO dial flags
 -- TODO dial type safety
@@ -190,48 +195,32 @@ internalSendByteString socket bytes =
             )
         )
 
-newtype Fix f
-  = Fix { unFix :: f ( Fix f ) }
-
-data RecvF a
-  = RecvF'Error Error
-  | RecvF'Again ( STM () ) ( IO () ) ( IO a )
-  | RecvF'Ok ByteString
-
--- TODO recvByteString_ async exception safety
+-- TODO internalRecvByteString_ async exception safety
 internalRecvByteString
   :: Libnng.Socket
-  -> IO ( Fix RecvF )
+  -> IO ( Either Error ByteString )
 internalRecvByteString socket =
   loop
 
   where
-    loop :: IO ( Fix RecvF )
+    loop :: IO ( Either Error ByteString )
     loop =
       attempt >>= \case
         Left Error'TryAgain ->
           getRecvFd socket >>= \case
             Left err ->
-              pure ( Fix ( RecvF'Error err ) )
+              pure ( Left err )
 
             Right recvFd -> do
-              ( ready, uninterested ) <-
-                threadWaitReadSTM recvFd
-
-              pure
-                ( Fix
-                    ( RecvF'Again
-                        ready
-                        uninterested
-                        loop
-                    )
-                )
+              ( ready, _uninterested ) <- threadWaitReadSTM recvFd
+              atomically ready
+              loop
 
         Left err ->
-          pure ( Fix ( RecvF'Error err ) )
+          pure ( Left err )
 
         Right bytes ->
-          pure ( Fix ( RecvF'Ok bytes ) )
+          pure ( Right bytes )
 
     attempt :: IO ( Either Error ByteString )
     attempt =

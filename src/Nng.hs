@@ -1,7 +1,8 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 module Nng
-  ( ReqSocket
+  ( RepSocket
+  , ReqSocket
   , Socket(..)
   , SocketType(..)
   , SSocketType(..)
@@ -13,7 +14,6 @@ module Nng
   , openPubSocket
   , openPullSocket
   , openPushSocket
-  , openRepSocket
   , openRespondentSocket
   , openSubSocket
   , openSurveyorSocket
@@ -37,6 +37,7 @@ import qualified GHC.TypeLits as TypeError (ErrorMessage(..))
 import Nng.Address
 import Nng.Error
 import Nng.Prelude
+import Nng.Socket.Rep (RepSocket)
 import Nng.Socket.Req (ReqSocket)
 import qualified Libnng
 import qualified Nng.Socket.Internal
@@ -55,7 +56,6 @@ data SocketType
   | SocketType'Pub
   | SocketType'Pull
   | SocketType'Push
-  | SocketType'Rep
   | SocketType'Respondent
   | SocketType'Sub
   | SocketType'Surveyor
@@ -66,7 +66,6 @@ data SSocketType :: SocketType -> Type where
   SSocketType'Pub        :: SSocketType 'SocketType'Pub
   SSocketType'Pull       :: SSocketType 'SocketType'Pull
   SSocketType'Push       :: SSocketType 'SocketType'Push
-  SSocketType'Rep        :: SSocketType 'SocketType'Rep
   SSocketType'Respondent :: SSocketType 'SocketType'Respondent
   SSocketType'Sub        :: SSocketType 'SocketType'Sub
   SSocketType'Surveyor   :: SSocketType 'SocketType'Surveyor
@@ -77,7 +76,6 @@ type family SocketX ( ty :: SocketType ) :: Type where
   SocketX 'SocketType'Pub = ()
   SocketX 'SocketType'Pull = ()
   SocketX 'SocketType'Push = ()
-  SocketX 'SocketType'Rep = ()
   SocketX 'SocketType'Respondent = ()
   SocketX 'SocketType'Sub = ()
   SocketX 'SocketType'Surveyor = ()
@@ -87,7 +85,6 @@ type family CanSend ( ty :: SocketType ) :: Constraint where
   CanSend 'SocketType'Pair       = ()
   CanSend 'SocketType'Pub        = ()
   CanSend 'SocketType'Push       = ()
-  CanSend 'SocketType'Rep        = ()
   CanSend 'SocketType'Respondent = ()
   CanSend 'SocketType'Surveyor   = ()
 
@@ -100,7 +97,6 @@ type family CanReceive ( ty :: SocketType ) :: Constraint where
   CanReceive 'SocketType'Bus        = ()
   CanReceive 'SocketType'Pair       = ()
   CanReceive 'SocketType'Pull       = ()
-  CanReceive 'SocketType'Rep        = ()
   CanReceive 'SocketType'Respondent = ()
   CanReceive 'SocketType'Sub        = ()
   CanReceive 'SocketType'Surveyor   = ()
@@ -173,19 +169,6 @@ openPushSocket =
       Right Socket
         { socketSocket = socket
         , socketType = SSocketType'Push
-        , socketX = ()
-        }
-
-openRepSocket :: IO ( Either Error ( Socket 'SocketType'Rep ) )
-openRepSocket =
-  Libnng.rep0_open <&> \case
-    Left err ->
-      Left ( cintToError err )
-
-    Right socket ->
-      Right Socket
-        { socketSocket = socket
-        , socketType = SSocketType'Rep
         , socketX = ()
         }
 

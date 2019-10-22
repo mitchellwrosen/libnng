@@ -27,6 +27,7 @@ library
   exposed-modules:
     Libnng
     Nng
+    Nng.Socket.Rep
     Nng.Socket.Req
   extra-libraries: nng
   ghc-options: -Wall
@@ -37,6 +38,7 @@ library
     Nng.Address
     Nng.Error
     Nng.Prelude
+    Nng.Socket.Internal
 
 test-suite tests
   build-depends:

@@ -33,7 +33,7 @@ closeImpl
   -> IO ( Either Error () )
 closeImpl socket = do
   killThread ( reqSocketThread socket )
-  errnoToError ( Libnng.close ( reqSocketSocket socket ) )
+  internalClose ( reqSocketSocket socket )
 
 
 --------------------------------------------------------------------------------
@@ -98,23 +98,7 @@ handleRequest socket request =
       pure ( Left err )
 
     Right () ->
-      attemptRecv ( internalRecvByteString socket )
-
-  where
-    attemptRecv
-      :: IO ( Fix RecvF )
-      -> IO ( Either Error ByteString )
-    attemptRecv action =
-      fmap unFix action >>= \case
-        RecvF'Error err ->
-          pure ( Left err )
-
-        RecvF'Ok response ->
-          pure ( Right response )
-
-        RecvF'Again ready _uninterested again -> do
-          atomically ready
-          attemptRecv again
+      internalRecvByteString socket
 
 
 --------------------------------------------------------------------------------
