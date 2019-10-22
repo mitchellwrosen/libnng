@@ -5,6 +5,7 @@ module Nng.Prelude
 import Control.Applicative as X (Alternative(..))
 import Control.Category as X ((>>>))
 import Control.Concurrent as X (ThreadId, killThread, forkIO)
+import Control.Concurrent.MVar as X
 import Control.Concurrent.STM as X
 import Control.Exception as X (Exception)
 import Control.Monad as X (forever, join, void)

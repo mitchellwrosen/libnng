@@ -12,7 +12,7 @@ import qualified Libnng
 
 data ReqSocket
   = ReqSocket
-  { reqSocketRequestVar :: TMVar Request
+  { reqSocketRequestVar :: MVar Request
   , reqSocketSocket :: Libnng.Socket
   , reqSocketThread :: ThreadId
   }
@@ -47,8 +47,8 @@ open =
       pure ( Left ( cintToError err ) )
 
     Right socket -> do
-      requestVar :: TMVar Request <-
-        newEmptyTMVarIO
+      requestVar :: MVar Request <-
+        newEmptyMVar
 
       managerThreadId :: ThreadId <-
         forkIO ( unsafeUnmask ( managerThread socket requestVar ) )
@@ -63,12 +63,12 @@ open =
 
 managerThread
   :: Libnng.Socket
-  -> TMVar Request
+  -> MVar Request
   -> IO ()
 managerThread socket requestVar =
   forever do
     Request request responseVar <-
-      atomically ( takeTMVar requestVar )
+      takeMVar requestVar
 
     response :: Either Error ByteString <-
       handleRequest
@@ -130,10 +130,8 @@ send socket request = do
   responseVar :: TMVar ( Either Error ByteString ) <-
     newEmptyTMVarIO
 
-  atomically
-    ( putTMVar
-        ( reqSocketRequestVar socket )
-        ( Request request responseVar )
-    )
+  putMVar
+    ( reqSocketRequestVar socket )
+    ( Request request responseVar )
 
   atomically ( takeTMVar responseVar )
