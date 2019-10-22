@@ -6,12 +6,106 @@ import Foreign.C
 import Libnng.Types
 
 
-foreign import ccall unsafe "nng_aio_alloc"
+foreign import ccall unsafe "static nng_aio_abort"
+  nng_aio_abort
+    :: Aio
+    -> CInt
+    -> IO ()
+
+foreign import ccall unsafe "static nng_aio_alloc"
   nng_aio_alloc
     :: Ptr Aio
     -> FunPtr ( Ptr a -> IO () )
     -> Ptr a
     -> IO CInt
+
+foreign import ccall unsafe "static nng_aio_begin"
+  nng_aio_begin
+    :: Aio
+    -> IO CBool
+
+foreign import ccall unsafe "static nng_aio_count"
+  nng_aio_count
+    :: Aio
+    -> IO CSize
+
+foreign import ccall unsafe "static nng_aio_defer"
+  nng_aio_defer
+    :: Aio
+    -> FunPtr ( Aio -> Ptr a -> CInt -> IO () )
+    -> Ptr a
+    -> IO ()
+
+foreign import ccall unsafe "static nng_aio_finish"
+  nng_aio_finish
+    :: Aio
+    -> CInt
+    -> IO ()
+
+foreign import ccall safe "static nng_aio_free"
+  nng_aio_free
+    :: Aio
+    -> IO ()
+
+foreign import ccall unsafe "static nng_aio_get_input"
+  nng_aio_get_input
+    :: Aio
+    -> CUInt
+    -> IO ( Ptr a )
+
+foreign import ccall unsafe "static nng_aio_get_msg"
+  nng_aio_get_msg
+    :: Aio
+    -> IO Msg
+
+foreign import ccall unsafe "static nng_aio_get_output"
+  nng_aio_get_output
+    :: Aio
+    -> CUInt
+    -> IO ( Ptr a )
+
+foreign import ccall unsafe "static nng_aio_result"
+  nng_aio_result
+    :: Aio
+    -> IO CInt
+
+foreign import ccall unsafe "static nng_aio_set_input"
+  nng_aio_set_input
+    :: Aio
+    -> CUInt
+    -> Ptr a
+    -> IO ()
+
+-- TODO nng_aio_set_iov
+
+foreign import ccall unsafe "static nng_aio_set_msg"
+  nng_aio_set_msg
+    :: Aio
+    -> Msg
+    -> IO ()
+
+foreign import ccall unsafe "static nng_aio_set_output"
+  nng_aio_set_output
+    :: Aio
+    -> CUInt
+    -> Ptr a
+    -> IO ()
+
+foreign import ccall unsafe "static nng_aio_set_timeout"
+  nng_aio_set_timeout
+    :: Aio
+    -> Duration
+    -> IO ()
+
+foreign import ccall safe "static nng_aio_stop"
+  nng_aio_stop
+    :: Aio
+    -> IO ()
+
+foreign import ccall safe "static nng_aio_wait"
+  nng_aio_wait
+    :: Aio
+    -> IO ()
 
 foreign import ccall unsafe "static nng_bus0_open"
   nng_bus0_open
@@ -78,7 +172,7 @@ foreign import ccall unsafe "static nng_dialer_setopt_bool"
   nng_dialer_setopt_bool
     :: Dialer
     -> CString
-    -> Bool
+    -> CBool
     -> IO CInt
 
 foreign import ccall unsafe "static nng_dialer_setopt_int"

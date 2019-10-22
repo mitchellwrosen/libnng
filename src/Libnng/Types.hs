@@ -18,6 +18,9 @@ newtype Dialer
   deriving stock ( Eq, Show )
   deriving newtype ( Storable )
 
+type Duration
+  = Int32
+
 newtype Listener
   = Listener { listener_id :: Word32 }
   deriving stock ( Eq, Show )
