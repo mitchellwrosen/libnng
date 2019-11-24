@@ -19,10 +19,10 @@ module Nng
   , openSurveyorSocket
   , openDialer
   , openDialer_
-  , Nng.Socket.Internal.closeDialer
+  , Libnng.dialer_close
   , openListener
   , openListener_
-  , Nng.Socket.Internal.closeListener
+  , Libnng.listener_close
     -- * Socket address
   , Address(..)
   , addressFromText
@@ -34,8 +34,8 @@ import Data.Kind (Constraint, Type)
 import GHC.TypeLits (TypeError)
 import qualified GHC.TypeLits as TypeError (ErrorMessage(..))
 
+import Libnng (Error(..))
 import Nng.Address
-import Nng.Error
 import Nng.Prelude
 import Nng.Socket.Rep (RepSocket)
 import Nng.Socket.Req (ReqSocket)
@@ -111,7 +111,7 @@ openBusSocket :: IO ( Either Error ( Socket 'SocketType'Bus ) )
 openBusSocket =
   Libnng.bus0_open <&> \case
     Left err ->
-      Left ( cintToError err )
+      Left err
 
     Right socket ->
       Right Socket
@@ -122,94 +122,87 @@ openBusSocket =
 
 openPairSocket :: IO ( Either Error ( Socket 'SocketType'Pair ) )
 openPairSocket =
-  Libnng.pair1_open <&> \case
-    Left err ->
-      Left ( cintToError err )
-
-    Right socket ->
-      Right Socket
-        { socketSocket = socket
-        , socketType = SSocketType'Pair
-        , socketX = ()
-        }
+  ( fmap . fmap )
+    ( \socket ->
+        Socket
+          { socketSocket = socket
+          , socketType = SSocketType'Pair
+          , socketX = ()
+          }
+    )
+    Libnng.pair1_open
 
 openPubSocket :: IO ( Either Error ( Socket 'SocketType'Pub ) )
 openPubSocket =
-  Libnng.pub0_open <&> \case
-    Left err ->
-      Left ( cintToError err )
-
-    Right socket ->
-      Right Socket
-        { socketSocket = socket
-        , socketType = SSocketType'Pub
-        , socketX = ()
-        }
+  ( fmap . fmap )
+    ( \socket ->
+        Socket
+          { socketSocket = socket
+          , socketType = SSocketType'Pub
+          , socketX = ()
+          }
+    )
+    Libnng.pub0_open
 
 openPullSocket :: IO ( Either Error ( Socket 'SocketType'Pull ) )
 openPullSocket =
-  Libnng.pull0_open <&> \case
-    Left err ->
-      Left ( cintToError err )
-
-    Right socket ->
-      Right Socket
-        { socketSocket = socket
-        , socketType = SSocketType'Pull
-        , socketX = ()
-        }
+  ( fmap . fmap )
+    ( \socket ->
+        Socket
+          { socketSocket = socket
+          , socketType = SSocketType'Pull
+          , socketX = ()
+          }
+    )
+    Libnng.pull0_open
 
 openPushSocket :: IO ( Either Error ( Socket 'SocketType'Push ) )
 openPushSocket =
-  Libnng.push0_open <&> \case
-    Left err ->
-      Left ( cintToError err )
-
-    Right socket ->
-      Right Socket
-        { socketSocket = socket
-        , socketType = SSocketType'Push
-        , socketX = ()
-        }
+  ( fmap . fmap )
+    ( \socket ->
+        Socket
+          { socketSocket = socket
+          , socketType = SSocketType'Push
+          , socketX = ()
+          }
+    )
+    Libnng.push0_open
 
 openRespondentSocket :: IO ( Either Error ( Socket 'SocketType'Respondent ) )
 openRespondentSocket =
-  Libnng.respondent0_open <&> \case
-    Left err ->
-      Left ( cintToError err )
-
-    Right socket ->
-      Right Socket
-        { socketSocket = socket
-        , socketType = SSocketType'Respondent
-        , socketX = ()
-        }
+  ( fmap . fmap )
+    ( \socket ->
+        Socket
+          { socketSocket = socket
+          , socketType = SSocketType'Respondent
+          , socketX = ()
+          }
+    )
+    Libnng.respondent0_open
 
 openSubSocket :: IO ( Either Error ( Socket 'SocketType'Sub ) )
 openSubSocket =
-  Libnng.sub0_open <&> \case
-    Left err ->
-      Left ( cintToError err )
-
-    Right socket ->
-      Right Socket
-        { socketSocket = socket
-        , socketType = SSocketType'Sub
-        , socketX = ()
-        }
+  ( fmap . fmap )
+    ( \socket ->
+        Socket
+          { socketSocket = socket
+          , socketType = SSocketType'Sub
+          , socketX = ()
+          }
+    )
+    Libnng.sub0_open
 
 openSurveyorSocket :: IO ( Either Error ( Socket 'SocketType'Surveyor ) )
 openSurveyorSocket =
-  Libnng.surveyor0_open <&> \case
-    Left err ->
-      Left ( cintToError err )
-
-    Right socket ->
-      Right Socket
-        { socketSocket = socket
-        , socketType = SSocketType'Surveyor
-        , socketX = ()
-        }
+  ( fmap . fmap )
+    ( \socket ->
+        Socket
+          { socketSocket = socket
+          , socketType = SSocketType'Surveyor
+          , socketX = ()
+          }
+    )
+    Libnng.surveyor0_open
 
 openDialer
   :: Socket ty

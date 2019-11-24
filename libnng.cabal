@@ -33,10 +33,14 @@ library
   ghc-options: -Wall
   hs-source-dirs: src
   other-modules:
+    Libnng.Aio
+    Libnng.Ctx
+    Libnng.Error
     Libnng.Foreign
+    Libnng.Socket
     Libnng.Types
+    Libnng.Utils
     Nng.Address
-    Nng.Error
     Nng.Prelude
     Nng.Socket.Internal
 

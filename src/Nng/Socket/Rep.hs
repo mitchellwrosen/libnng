@@ -5,7 +5,7 @@ module Nng.Socket.Rep
   , send
   ) where
 
-import Nng.Error
+import Libnng (Error(..))
 import Nng.Prelude
 import Nng.Socket.Internal
 import qualified Libnng
@@ -17,7 +17,7 @@ newtype RepSocket
   }
 
 instance IsSocket RepSocket where
-  close         = repSocketSocket >>> internalClose
+  close         = repSocketSocket >>> Libnng.close
   openDialer    = repSocketSocket >>> internalOpenDialer
   openDialer_   = repSocketSocket >>> internalOpenDialer_
   openListener  = repSocketSocket >>> internalOpenListener
@@ -28,7 +28,7 @@ open :: IO ( Either Error RepSocket )
 open =
   Libnng.rep0_open <&> \case
     Left err ->
-      Left ( cintToError err )
+      Left err
 
     Right socket ->
       Right RepSocket

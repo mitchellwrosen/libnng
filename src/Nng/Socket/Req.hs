@@ -4,7 +4,7 @@ module Nng.Socket.Req
   , send
   ) where
 
-import Nng.Error
+import Libnng (Error(..))
 import Nng.Prelude
 import Nng.Socket.Internal
 import qualified Libnng
@@ -33,7 +33,7 @@ closeImpl
   -> IO ( Either Error () )
 closeImpl socket = do
   killThread ( reqSocketThread socket )
-  internalClose ( reqSocketSocket socket )
+  Libnng.close ( reqSocketSocket socket )
 
 
 --------------------------------------------------------------------------------
@@ -44,7 +44,7 @@ open :: IO ( Either Error ReqSocket )
 open =
   Libnng.req0_open >>= \case
     Left err ->
-      pure ( Left ( cintToError err ) )
+      pure ( Left err )
 
     Right socket -> do
       requestVar :: MVar Request <-
